@@ -96,6 +96,7 @@ class ModuleVersionService {
 
   Directory get _bundledModuleDirectory =>
       Directory(join(dirname(Platform.resolvedExecutable), 'module'));
+  Directory get _runtimeModuleDirectory => FileHelper.getModuleDirectory();
   File get _bundledModuleArchive =>
       File(join(_bundledModuleDirectory.path, 'kyber-module.zip'));
 
@@ -164,6 +165,45 @@ class ModuleVersionService {
         _bundledModuleArchive.existsSync();
   }
 
+  Future<void> _copyBundledModuleFiles(
+    Directory sourceDir,
+    Directory targetDir, {
+    required bool requireModSupport,
+  }) async {
+    final fileNames = <String>[
+      'Kyber.dll',
+      'vivoxsdk.dll',
+      'ca_root.pem',
+      if (requireModSupport) 'VanillaBundleAggregation.kb',
+      'VERSION',
+      'kyber-module.zip',
+    ];
+
+    if (!targetDir.existsSync()) {
+      targetDir.createSync(recursive: true);
+    }
+
+    _prepareModuleDirectoryForOverwrite(
+      targetDir.path,
+      includeModFiles: requireModSupport,
+    );
+
+    for (final fileName in fileNames) {
+      final sourceFile = File(join(sourceDir.path, fileName));
+      if (!sourceFile.existsSync()) {
+        continue;
+      }
+
+      final targetFile = File(join(targetDir.path, fileName));
+      if (targetFile.existsSync()) {
+        _tryClearReadOnly(targetFile.path);
+        targetFile.deleteSync();
+      }
+
+      sourceFile.copySync(targetFile.path);
+    }
+  }
+
   Future<bool> installBundledModuleIfAvailable({
     bool requireModSupport = true,
   }) async {
@@ -172,33 +212,51 @@ class ModuleVersionService {
       return false;
     }
 
-    if (_hasModuleFiles(sourceDir.path, requireModSupport: requireModSupport)) {
+    final targetDir = isStandalone() ? sourceDir : _runtimeModuleDirectory;
+    if (_hasModuleFiles(targetDir.path, requireModSupport: requireModSupport)) {
       return true;
     }
 
-    if (!_bundledModuleArchive.existsSync()) {
-      return false;
-    }
-
-    _prepareModuleDirectoryForOverwrite(
-      sourceDir.path,
-      includeModFiles: requireModSupport,
-    );
-    await extract(
-      filePath: _bundledModuleArchive.path,
-      targetDir: sourceDir.path,
-    );
-    _prepareModuleDirectoryForOverwrite(
-      sourceDir.path,
-      includeModFiles: requireModSupport,
-    );
-
-    final prepared = _hasModuleFiles(
+    final sourceHasFiles = _hasModuleFiles(
       sourceDir.path,
       requireModSupport: requireModSupport,
     );
+
+    if (!sourceHasFiles && !_bundledModuleArchive.existsSync()) {
+      return false;
+    }
+
+    if (!targetDir.existsSync()) {
+      targetDir.createSync(recursive: true);
+    }
+
+    if (sourceHasFiles && sourceDir.path != targetDir.path) {
+      await _copyBundledModuleFiles(
+        sourceDir,
+        targetDir,
+        requireModSupport: requireModSupport,
+      );
+    } else if (_bundledModuleArchive.existsSync()) {
+      _prepareModuleDirectoryForOverwrite(
+        targetDir.path,
+        includeModFiles: requireModSupport,
+      );
+      await extract(
+        filePath: _bundledModuleArchive.path,
+        targetDir: targetDir.path,
+      );
+      _prepareModuleDirectoryForOverwrite(
+        targetDir.path,
+        includeModFiles: requireModSupport,
+      );
+    }
+
+    final prepared = _hasModuleFiles(
+      targetDir.path,
+      requireModSupport: requireModSupport,
+    );
     if (prepared) {
-      _logger.info('Prepared bundled module in ${sourceDir.path}');
+      _logger.info('Prepared bundled module in ${targetDir.path}');
     }
 
     return prepared;
@@ -214,13 +272,22 @@ class ModuleVersionService {
   Future<String> getLaunchModuleDirectory({
     bool requireModSupport = true,
   }) async {
+    if (_hasModuleFiles(
+      _runtimeModuleDirectory.path,
+      requireModSupport: requireModSupport,
+    )) {
+      return _runtimeModuleDirectory.path;
+    }
+
     if (await installBundledModuleIfAvailable(
       requireModSupport: requireModSupport,
     )) {
-      return _bundledModuleDirectory.path;
+      return isStandalone()
+          ? _bundledModuleDirectory.path
+          : _runtimeModuleDirectory.path;
     }
 
-    return FileHelper.getModuleDirectory().path;
+    return _runtimeModuleDirectory.path;
   }
 
   Future<String> getRuntimeVersion({
@@ -251,8 +318,6 @@ class ModuleVersionService {
   }
 
   bool isStandalone() {
-    // TODO: find a fix for this
-    return false;
     RegistryKey? key;
     try {
       key = Registry.openPath(
@@ -409,9 +474,7 @@ class ModuleVersionService {
       ),
     );
     final filename = basename(download.url).split('?').first;
-    final downloadDir = module == VersionModule.module
-        ? await getLaunchModuleDirectory(requireModSupport: true)
-        : await module.getDownloadDir();
+    final downloadDir = await module.getDownloadDir();
     final downloadPath = join(downloadDir, filename);
     final downloadDirectory = Directory(downloadDir);
 
