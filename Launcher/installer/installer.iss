@@ -40,7 +40,7 @@ Name: "english"; MessagesFile: "compiler:Default.isl"
 Name: "desktopicon"; Description: "{cm:CreateDesktopIcon}"; GroupDescription: "{cm:AdditionalIcons}"; Flags: unchecked
 
 [Files]
-Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs
+Source: "..\build\windows\x64\runner\Release\*"; DestDir: "{app}"; Flags: ignoreversion recursesubdirs createallsubdirs; Excludes: "Release.7z,err.txt,out.txt,.sentry-native\*,module\Kyber.dll,module\vivoxsdk.dll,module\VanillaBundleAggregation.kb,module\ca_root.pem"
 Source: "7za.exe"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\third_party\libs\7z.dll"; DestDir: "{app}"; Flags: ignoreversion
 Source: "..\third_party\libs\UnRAR.dll"; DestDir: "{app}"; Flags: ignoreversion

@@ -1,3 +1,4 @@
 ThirdParty/** linguist-vendored
 Module/ThirdParty/** linguist-vendored
 CLI/ThirdParty/** linguist-vendored
+artifacts/*.exe filter=lfs diff=lfs merge=lfs -text
