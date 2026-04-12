@@ -42,7 +42,12 @@ class _UpdateDialogState extends State<UpdateDialog> {
   }
 
   void startDownload() async {
-    if (ModuleVersionService().isStandalone() && widget.module != VersionModule.module) {
+    if (installing) {
+      return;
+    }
+
+    if (ModuleVersionService().isStandalone() &&
+        widget.module != VersionModule.module) {
       NotificationService.showNotification(
         message:
             'Automatic updates are not supported in the standalone version.',
@@ -52,26 +57,46 @@ class _UpdateDialogState extends State<UpdateDialog> {
       return;
     }
 
-    unawaited(
-      ModuleVersionService()
-          .updateVersion(
-            module: widget.module,
-            onProgress: (current, total) => setState(() {
-              this.current = current;
-              this.total = total;
-            }),
-          )
-          .then(
-            (_) {
-              if (widget.module == VersionModule.module) {
-                Navigator.pop(context);
-              }
-            },
-          ),
-    );
-    setState(() => installing = true);
+    setState(() {
+      installing = true;
+      total = 0;
+      current = 0;
+    });
     if (widget.module == VersionModule.installer) {
       NotificationService.showNotification(message: 'Installing update...');
+    }
+
+    try {
+      await ModuleVersionService().updateVersion(
+        module: widget.module,
+        onProgress: (current, total) {
+          if (!mounted) {
+            return;
+          }
+
+          setState(() {
+            this.current = current;
+            this.total = total;
+          });
+        },
+      );
+
+      if (!mounted) {
+        return;
+      }
+
+      if (widget.module == VersionModule.module) {
+        Navigator.pop(context);
+      }
+    } catch (e) {
+      if (mounted) {
+        setState(() => installing = false);
+      }
+
+      NotificationService.error(
+        message:
+            'Failed to update ${widget.module == VersionModule.module ? 'Module' : 'Launcher'}: $e',
+      );
     }
   }
 
@@ -110,7 +135,9 @@ class _UpdateDialogState extends State<UpdateDialog> {
                   height: 20,
                 ),
                 Text(
-                  'Downloading update... (${total != 0 ? (current / total * 100).toStringAsFixed(0) : 0}%)',
+                  (total != 0 && current >= total)
+                      ? 'Extracting update...'
+                      : 'Downloading update... (${total != 0 ? (current / total * 100).toStringAsFixed(0) : 0}%)',
                   style: const TextStyle(
                     fontSize: 16,
                   ),

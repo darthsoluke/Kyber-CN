@@ -6,6 +6,7 @@ import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/services/rich_presence.dart';
 import 'package:kyber_launcher/core/services/voip_service.dart';
 import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
 
@@ -23,32 +24,32 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
         return;
       }
 
-      final state = await sl
+      final commonState = await sl
           .get<MaximaGameInstance>()
           .clientService
           .commonClient
           .getInfo(Empty());
-      if (!state.hasServer() && !state.client.hasServerId()) {
+      if (!commonState.hasServer() && !commonState.client.hasServerId()) {
         sl.get<RichPresence>().clearPresence();
         return;
       }
 
-      final id = state.hasServer() ? state.server.id : state.client.serverId;
-      final client = sl.get<KyberGRPCService>();
-      final server = await client.serverBrowserClient.getServer(
-        ServerRequest(id: id),
-      );
-      if (state is KyberStatusHosting) {
+      final id = commonState.hasServer()
+          ? commonState.server.id
+          : commonState.client.serverId;
+      final server = await _resolveServer(id);
+      final currentState = this.state;
+      if (currentState is KyberStatusHosting) {
         emit(
           KyberStatusHosting(
-            serverState: (state as KyberStatusHosting).serverState,
+            serverState: currentState.serverState,
             server: server,
           ),
         );
-      } else if (state is KyberStatusPlaying) {
+      } else if (currentState is KyberStatusPlaying) {
         emit(
           KyberStatusPlaying(
-            serverState: (state as KyberStatusPlaying).serverState,
+            serverState: currentState.serverState,
             server: server,
             joined: joined,
           ),
@@ -57,7 +58,9 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
         emit(KyberStatusNormal());
       }
 
-      sl.get<RichPresence>().updatePresenceKyber(state, server);
+      if (server != null) {
+        sl.get<RichPresence>().updatePresenceKyber(commonState, server);
+      }
     });
   }
 
@@ -90,11 +93,10 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
               ((state is KyberStatusPlaying || state is KyberStatusHosting) &&
                   (state as dynamic).server == null))) {
         final id = data.hasServer() ? data.server.id : data.client.serverId;
-        final client = sl.get<KyberGRPCService>();
-        server = await client.serverBrowserClient.getServer(
-          ServerRequest(id: id),
-        );
-        sl.get<RichPresence>().updatePresenceKyber(data, server);
+        server = await _resolveServer(id);
+        if (server != null) {
+          sl.get<RichPresence>().updatePresenceKyber(data, server);
+        }
       }
 
       if (data.hasClient()) {
@@ -124,6 +126,19 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
   }
 
   final _logger = Logger('status_cubit');
+
+  Future<Server?> _resolveServer(String id) async {
+    if (id.isEmpty) {
+      return null;
+    }
+
+    if (LanServerHelper.isLanServerId(id)) {
+      return LanServerHelper.lookup(id);
+    }
+
+    final client = sl.get<KyberGRPCService>();
+    return client.serverBrowserClient.getServer(ServerRequest(id: id));
+  }
 
   @override
   Future<void> close() {

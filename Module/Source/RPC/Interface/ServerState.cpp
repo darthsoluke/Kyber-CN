@@ -32,13 +32,26 @@ ServerUnaryReactor* ServerInterfaceService::StartServer(
     info.description = request->description();
     info.password = request->password();
 
-    auto entry = g_program->m_server->m_mapRotation.GetNextEntry();
-    info.level = entry.level;
-    info.mode = entry.mode;
+    const MapRotationEntry* entry = g_program->m_server->m_mapRotation.GetNextEntry();
+    if (entry == nullptr)
+    {
+        reactor->Finish(Status(grpc::StatusCode::INVALID_ARGUMENT, "map rotation must contain at least one entry"));
+        return reactor;
+    }
+
+    info.level = entry->level;
+    info.mode = entry->mode;
 
     info.maxPlayers = request->maxplayers();
+    info.port = request->port() > 0 && request->port() <= 65535 ? request->port() : 25200;
+
+    if (request->has_onlinemode())
+    {
+        g_program->m_server->m_onlineMode = request->onlinemode();
+    }
 
     g_program->m_server->Start(info);
+    response->set_port(info.port);
 
     reactor->Finish(Status::OK);
     return reactor;

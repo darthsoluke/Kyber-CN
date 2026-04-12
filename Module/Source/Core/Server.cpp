@@ -44,6 +44,19 @@
 
 namespace Kyber
 {
+constexpr uint32_t kDefaultServerPort = 25200;
+constexpr uint32_t kDefaultMaxSpectatorCount = 4;
+
+static uint32_t NormalizeServerPort(uint32_t port)
+{
+    if (port == 0 || port > 65535)
+    {
+        return kDefaultServerPort;
+    }
+
+    return port;
+}
+
 static bool IsOnlineMode()
 {
     const char* onlineMode = std::getenv("KYBER_ONLINE_MODE");
@@ -126,6 +139,7 @@ void InitLevelSetup(LevelSetup* levelSetup, const char* level, const char* mode,
 Server::Server()
     : m_socketManager()
     , m_natClient(nullptr)
+    , m_lanDiscovery(std::make_unique<LanDiscoveryService>())
     , m_playerManager(nullptr)
     , m_persistenceManager(new PersistenceManager())
     , m_eventManager(new EventManager())
@@ -136,6 +150,7 @@ Server::Server()
     , m_restarting(false)
     , m_hooksRemoved(false)
     , m_levelLoaded(false)
+    , m_heartbeatTimer(0.f)
     , m_latestLoadLevelRequest(LoadLevelRequest())
 {
     m_eventManager->RegisterListener<MainLoopInitStartServerEvent>(this);
@@ -158,7 +173,7 @@ Server::~Server()
     KYBER_LOG(Debug, "[Server] Destroying");
 }
 
-bool Server::IsRunning()
+bool Server::IsRunning() const
 {
     return m_runningHosted || g_program->m_isDedicatedServer;
 }
@@ -177,33 +192,58 @@ void Server::Initialize()
     m_persistenceManager->Initialize();
 }
 
+void Server::ApplyRuntimeSettings(const ServerCreationInfo& info)
+{
+    const uint32_t serverPort = NormalizeServerPort(info.port);
+
+    if (NetworkSettings* networkSettings = Settings<NetworkSettings>("Network"))
+    {
+        networkSettings->MaxClientCount = info.maxPlayers;
+        networkSettings->ServerPort = serverPort;
+
+        KYBER_LOG(Info, "[Server] Protocol Version " << networkSettings->ProtocolVersion << " TitleId " << networkSettings->TitleId);
+    }
+
+    if (NetObjectSystemSettings* netObjectSettings = Settings<NetObjectSystemSettings>("NetObjectSystem"))
+    {
+        netObjectSettings->MaxServerConnectionCount = info.maxPlayers;
+    }
+
+    if (ClientSettings* clientSettings = Settings<ClientSettings>("Client"))
+    {
+        clientSettings->FastExit = true;
+        clientSettings->ServerIp = StringUtils::CopyWithArena("");
+    }
+
+    if (GameSettings* gameSettings = Settings<GameSettings>("Game"))
+    {
+        gameSettings->Level = StringUtils::CopyWithArena(info.level);
+        gameSettings->MaxSpectatorCount = kDefaultMaxSpectatorCount;
+        gameSettings->DefaultLayerInclusion = StringUtils::CopyWithArena("GameMode=" + info.mode);
+    }
+
+    if (ServerSettings* serverSettings = Settings<ServerSettings>("Server"))
+    {
+        serverSettings->ServerName = StringUtils::CopyWithArena(info.name);
+        serverSettings->ServerPassword = StringUtils::CopyWithArena(info.password);
+    }
+}
+
 void Server::Start(const ServerCreationInfo& info, bool changeState)
 {
+    ServerCreationInfo normalizedInfo = info;
+    normalizedInfo.port = NormalizeServerPort(info.port);
+
     EnableGameHooks();
 
-    NetworkSettings* networkSettings = Settings<NetworkSettings>("Network");
-    networkSettings->MaxClientCount = info.maxPlayers;
-    networkSettings->ServerPort = 25200;
-    // networkSettings->UseFrameManager = false;
+    ApplyRuntimeSettings(normalizedInfo);
 
-    KYBER_LOG(Info, "[Server] Protocol Version " << networkSettings->ProtocolVersion << " TitleId " << networkSettings->TitleId);
-
-    NetObjectSystemSettings* netObjectSettings = Settings<NetObjectSystemSettings>("NetObjectSystem");
-    netObjectSettings->MaxServerConnectionCount = info.maxPlayers;
-    // netObjectSettings->DeltaCompressionSettings.IsEnabled = false;
-
-    ClientSettings* clientSettings = Settings<ClientSettings>("Client");
-    clientSettings->FastExit = true;
-    clientSettings->ServerIp = StringUtils::CopyWithArena("");
-
-    GameSettings* gameSettings = Settings<GameSettings>("Game");
-    gameSettings->Level = StringUtils::CopyWithArena(info.level);
-    gameSettings->MaxSpectatorCount = 4;
-
-    char* gameMode = StringUtils::CopyWithArena("GameMode=" + info.mode);
-    gameSettings->DefaultLayerInclusion = gameMode;
-
-    m_creationInfo = info;
+    m_creationInfo = normalizedInfo;
+    m_heartbeatTimer = 0.f;
+    if (m_lanDiscovery)
+    {
+        m_lanDiscovery->Start();
+    }
 
     g_program->m_server->Register(true);
 
@@ -224,7 +264,7 @@ void Server::Start(const ServerCreationInfo& info, bool changeState)
     {
         // Force
         m_levelLoaded = true;
-        LoadNextLevel(info.level.c_str(), info.mode.c_str());
+        LoadNextLevel(normalizedInfo.level.c_str(), normalizedInfo.mode.c_str());
         // g_program->ChangeClientState(ClientState_Startup);
     }
 
@@ -376,6 +416,11 @@ __int64 ServerStartHk(__int64 inst, ServerSpawnInfo& info, __int64 spawnOverride
         socketManager = server->m_socketManager;
         socketManager->m_info = server->m_socketSpawnInfo;
         KYBER_LOG(Info, "[Server] Server is using custom socket manager");
+    }
+
+    if (server->m_creationInfo)
+    {
+        info.serverPort = NormalizeServerPort(server->m_creationInfo->port);
     }
 
     __int64 result = trampoline(inst, info, spawnOverrides, socketManager);
@@ -625,24 +670,35 @@ bool ServerConnectionOnCreatePlayerMessageHk(ServerConnection* inst, NetworkCrea
 
 void Server::Heartbeat(const UpdateParameters& params)
 {
-    if (!IsRunning() || !m_onlineMode)
+    if (!IsRunning())
     {
+        m_heartbeatTimer = 0.f;
+        return;
+    }
+
+    if (m_lanDiscovery)
+    {
+        m_lanDiscovery->Poll(*this);
+    }
+
+    if (!m_onlineMode)
+    {
+        m_heartbeatTimer = 0.f;
         return;
     }
 
     // Time between heartbeats
     const float kIntervalSeconds = 10;
-    static float timer = 0;
 
     float deltaTime = params.simulationDeltaTime.toSecondsAsFloat();
-    timer += deltaTime;
+    m_heartbeatTimer += deltaTime;
 
-    if (timer < kIntervalSeconds)
+    if (m_heartbeatTimer < kIntervalSeconds)
     {
         return;
     }
 
-    timer = 0;
+    m_heartbeatTimer = 0.f;
 
     // TODO: Remove and fix SendPlayerList on disconnect
     g_program->GetAPI()->GetServerManagement()->SendPlayerList();
@@ -838,14 +894,24 @@ void Server::Stop()
     KYBER_LOG(Info, "[Server] Stopping Kyber server...");
 
     m_runningHosted = false;
+    m_heartbeatTimer = 0.f;
     m_playerManager = nullptr;
     m_serverInstance = nullptr;
 
     m_serverId.clear();
     m_onlineMode = IsOnlineMode();
+    if (m_lanDiscovery)
+    {
+        m_lanDiscovery->Stop();
+    }
+
+    if (m_socketManager == nullptr || m_socketManager->m_sockets.empty())
+    {
+        return;
+    }
 
     UDPSocket* socket = m_socketManager->m_sockets.back();
-    if (socket != m_natClient)
+    if (socket != nullptr && socket != m_natClient)
     {
         m_socketManager->Close(socket);
         socket->Close();

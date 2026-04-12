@@ -1,13 +1,11 @@
-import 'dart:async';
 import 'dart:io';
 import 'dart:math';
 
+import 'package:archive/archive_io.dart';
 import 'package:collection/collection.dart';
-import 'package:flutter_rust_bridge/flutter_rust_bridge.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/services/unzip_helper.dart';
 import 'package:kyber_launcher/features/download_manager/models/extraction_result.dart';
-import 'package:kyber_launcher/gen/rust/api/archive.dart' as rust_archive;
 import 'package:logging/logging.dart';
 import 'package:path/path.dart';
 import 'package:slugify/slugify.dart';
@@ -46,9 +44,19 @@ class ArchiveExtractor {
         onProgress: onProgress,
       );
 
-      final files = Directory(tmpDir).listSync().whereType<File>();
+      final files = Directory(
+        tmpDir,
+      ).listSync(recursive: true).whereType<File>();
+      if (files.isEmpty) {
+        return const ExtractionResult(
+          success: false,
+          extractedFiles: [],
+          error: 'Archive extraction produced no files',
+        );
+      }
+
       final isFrostyCollection = files.any(
-        (e) => e.path.endsWith('.fbcollection'),
+        (e) => e.path.toLowerCase().endsWith('.fbcollection'),
       );
 
       if (isFrostyCollection) {
@@ -57,13 +65,7 @@ class ArchiveExtractor {
         return await _handleRegularMods(tmpDir, files);
       }
     } catch (e, s) {
-      String errorMessage;
-      if (e is AnyhowException) {
-        errorMessage = e.message;
-      } else {
-        errorMessage = 'An error occurred while unpacking the archive: $e';
-      }
-
+      final errorMessage = 'An error occurred while unpacking the archive: $e';
       _logger.severe('Could not extract $filename', e, s);
       return ExtractionResult(
         success: false,
@@ -84,22 +86,7 @@ class ArchiveExtractor {
     final filePath = join(basePath, filename);
 
     if (filename.endsWith('.zip')) {
-      final completer = Completer<void>();
-      final stream =
-          rust_archive
-              .extractStream(filePath: filePath, targetDir: tmpDir)
-              .asBroadcastStream()
-            ..listen((event) {
-              if (event.$2 == event.$1) {
-                completer.complete();
-              }
-
-              onProgress?.call(event.$1, event.$2);
-            });
-
-      await stream.last;
-
-      await Future<void>.delayed(const Duration(milliseconds: 500));
+      await _extractZip(filePath, tmpDir, onProgress: onProgress);
     } else {
       await Future<void>.delayed(const Duration(seconds: 1));
       await UnzipHelper.unrar(
@@ -110,10 +97,40 @@ class ArchiveExtractor {
     }
 
     if (deleteSource) {
-      await File(filePath).delete();
+      try {
+        await File(filePath).delete();
+      } catch (e) {
+        _logger.warning('Failed to delete source archive $filePath: $e');
+      }
     }
 
     return tmpDir;
+  }
+
+  Future<void> _extractZip(
+    String filePath,
+    String targetDir, {
+    ProgressCallback? onProgress,
+  }) async {
+    final countStream = InputFileStream(filePath);
+    final archive = ZipDecoder().decodeStream(countStream);
+    final total = archive.where((entry) => entry.isFile).length;
+    await countStream.close();
+    await archive.clear();
+
+    var extracted = 0;
+    await extractFileToDisk(
+      filePath,
+      targetDir,
+      callback: (entry) {
+        if (!entry.isFile) {
+          return;
+        }
+
+        extracted++;
+        onProgress?.call(extracted, total == 0 ? extracted : total);
+      },
+    );
   }
 
   Future<ExtractionResult> _handleFrostyCollection(
@@ -170,8 +187,20 @@ class ArchiveExtractor {
     try {
       final mainDirFiles = Directory(basePath).listSync();
       final extractedFiles = <String>[];
+      final relevantFiles = files.where((file) {
+        final lower = file.path.toLowerCase();
+        return lower.endsWith('.fbmod') || lower.endsWith('.dll');
+      });
 
-      for (final file in files) {
+      if (relevantFiles.isEmpty) {
+        return const ExtractionResult(
+          success: false,
+          extractedFiles: [],
+          error: 'Archive does not contain installable mods',
+        );
+      }
+
+      for (final file in relevantFiles) {
         final mod = ModReader(file.openSync(), basename(file.path)).readMod();
 
         final existingMod = mainDirFiles.firstWhereOrNull(

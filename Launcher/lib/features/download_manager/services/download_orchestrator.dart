@@ -14,6 +14,8 @@ import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/module_version_service.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/download_manager/models/download_request.dart';
+import 'package:kyber_launcher/features/download_manager/services/archive_extractor.dart'
+    show ArchiveExtractor;
 import 'package:kyber_launcher/features/download_manager/services/download_link_resolver.dart';
 import 'package:kyber_launcher/features/download_manager/services/download_post_processor.dart';
 import 'package:kyber_launcher/features/download_manager/services/platform/download_platform_integration.dart';
@@ -27,6 +29,7 @@ import 'package:kyber_launcher/injection_container.dart';
 import 'package:kyber_launcher/shared/ui/dialog/kyber_dialog.dart';
 import 'package:logging/logging.dart';
 import 'package:path/path.dart';
+import 'package:rhttp/src/rust/frb_generated.dart' as rhttp_frb;
 
 class ProgressUpdate {
   ProgressUpdate(this.extracted, this.total);
@@ -37,11 +40,26 @@ class ProgressUpdate {
 
 @pragma('vm:entry-point')
 Future<Task?> _onTaskStart(Task task) async {
-  final caFile = File(
-    join(FileHelper.getModuleDirectory().path, 'ca_root.pem'),
-  );
-  final certificate = caFile.readAsBytesSync();
-  SecurityContext.defaultContext.setTrustedCertificatesBytes(certificate);
+  try {
+    // Prefer a bundled module (portable Release) first, then fall back to the
+    // global module directory.
+    final localCa = File(
+      join(dirname(Platform.resolvedExecutable), 'module', 'ca_root.pem'),
+    );
+    final globalCa = File(
+      join(FileHelper.getModuleDirectory().path, 'ca_root.pem'),
+    );
+
+    final caFile = localCa.existsSync() ? localCa : globalCa;
+    if (!caFile.existsSync()) {
+      return task;
+    }
+
+    final certificate = caFile.readAsBytesSync();
+    SecurityContext.defaultContext.setTrustedCertificatesBytes(certificate);
+  } catch (_) {
+    // Don't fail the download task if the certificate file is missing or unreadable.
+  }
 
   return task;
 }
@@ -55,7 +73,10 @@ Future<void> _onTaskDone(
     return;
   }
 
-  await MaximaLib.init();
+  await rhttp_frb.RustLib.init(forceSameCodegenVersion: false);
+  // `rhttp` still ships FRB 2.11.1 while the launcher bridge is 2.12.0.
+  // Background download callbacks can load both into the same isolate.
+  await MaximaLib.init(forceSameCodegenVersion: false);
   await DownloadOrchestrator._processCompletedDownloadInIsolate(
     taskStatusUpdate,
     (count, total) {
@@ -173,19 +194,6 @@ class DownloadOrchestrator with ChangeNotifier {
 
   Future<bool> enqueueDownload(DownloadRequest request) async {
     try {
-      final moduleUpdate = await ModuleVersionService().updateAvailable(
-        module: VersionModule.module,
-      );
-      if (moduleUpdate) {
-        await showKyberDialog(
-          context: navigatorKey.currentContext!,
-          builder: (_) => const UpdateDialog(
-            module: VersionModule.module,
-            forceInstall: true,
-          ),
-        );
-      }
-
       final resolved = await _linkResolver.resolve(request);
       final tasks = await FileDownloader().database.allRecords();
       if (tasks.any(
@@ -303,6 +311,7 @@ class DownloadOrchestrator with ChangeNotifier {
     );
 
     if (update.status == .complete) {
+      await _ensurePostProcessed(update);
       await sl.isReady<ModService>();
       await sl.get<ModService>().refresh();
 
@@ -322,6 +331,52 @@ class DownloadOrchestrator with ChangeNotifier {
 
     _statusUpdates.add(update);
     notifyListeners();
+  }
+
+  Future<void> _ensurePostProcessed(TaskStatusUpdate update) async {
+    final extractor = ArchiveExtractor(basePath: update.task.directory);
+    if (!extractor.isArchive(update.task.filename)) {
+      return;
+    }
+
+    final sourcePath = join(update.task.directory, update.task.filename);
+    final sourceFile = File(sourcePath);
+    final processingLock = File('$sourcePath.kyber_processing');
+
+    for (var attempt = 0; attempt < 10; attempt++) {
+      if (!sourceFile.existsSync()) {
+        return;
+      }
+
+      if (processingLock.existsSync()) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        continue;
+      }
+
+      if (attempt < 3) {
+        await Future<void>.delayed(const Duration(milliseconds: 500));
+        continue;
+      }
+
+      break;
+    }
+
+    if (!sourceFile.existsSync()) {
+      return;
+    }
+
+    _logger.warning(
+      'Archive still exists after completion, running main-isolate post processing for ${update.task.filename}',
+    );
+    final postProcessor = DownloadPostProcessor(
+      platformIntegration: _platformIntegration,
+    );
+    await postProcessor.processCompletedDownload(
+      update,
+      onProgress: (current, total) {
+        _extractionProgressUpdates.add(ProgressUpdate(current, total));
+      },
+    );
   }
 
   Future<void> _taskProgressCallback(TaskProgressUpdate update) async {

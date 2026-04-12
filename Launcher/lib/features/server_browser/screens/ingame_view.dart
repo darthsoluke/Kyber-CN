@@ -2,6 +2,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/mod_browser/screens/mod_details.dart';
 import 'package:kyber_launcher/features/reports/dialogs/report_player_dialog.dart';
@@ -21,6 +22,7 @@ class IngameView extends StatefulWidget {
 class _IngameViewState extends State<IngameView> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return BlocBuilder<IngameViewCubit, IngameViewState>(
       builder: (context, state) {
         return BorderedContent(
@@ -31,7 +33,7 @@ class _IngameViewState extends State<IngameView> {
                 crossAxisAlignment: .start,
                 children: [
                   Text(
-                    state.server?.name ?? 'Unknown Server',
+                    state.server?.name ?? l10n.text('common.unknownServer'),
                     style: const TextStyle(
                       fontFamily: FontFamily.battlefrontUI,
                       fontSize: 20,
@@ -40,7 +42,14 @@ class _IngameViewState extends State<IngameView> {
                   ),
                   if (state.server != null && state.server!.official)
                     Text(
-                      'Hosted by ${state.server?.creator ?? 'Unknown Server'}',
+                      l10n.text(
+                        'serverBrowser.hostedBy',
+                        params: {
+                          'name':
+                              state.server?.creator ??
+                              l10n.text('common.unknownServer'),
+                        },
+                      ),
                       style: const TextStyle(
                         fontSize: 12,
                         color: kWhiteColor,
@@ -50,7 +59,7 @@ class _IngameViewState extends State<IngameView> {
                 ],
               ),
               KyberTooltip(
-                message: 'Back to Server Browser'.toUpperCase(),
+                message: l10n.text('common.backToServerBrowser'),
                 child: KyberIconButton(
                   onPressed: router.pop,
                   iconData: mt.Icons.close,
@@ -64,13 +73,13 @@ class _IngameViewState extends State<IngameView> {
               KyberHeader(
                 sections: [
                   ExpandedHeaderSection(
-                    children: [Text('Event Log'.toUpperCase())],
+                    children: [Text(l10n.text('moderation.eventLog'))],
                   ),
                   ExpandedHeaderSection(
-                    children: [Text('Light Side'.toUpperCase())],
+                    children: [Text(l10n.text('moderation.lightSide'))],
                   ),
                   ExpandedHeaderSection(
-                    children: [Text('Dark Side'.toUpperCase())],
+                    children: [Text(l10n.text('moderation.darkSide'))],
                   ),
                 ],
               ),

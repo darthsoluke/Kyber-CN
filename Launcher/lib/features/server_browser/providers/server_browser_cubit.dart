@@ -25,6 +25,7 @@ import 'package:kyber_launcher/features/nexusmods/dialogs/nexusmods_login.dart';
 import 'package:kyber_launcher/features/nexusmods/exceptions/missing_nexus_auth_exception.dart';
 import 'package:kyber_launcher/features/nexusmods/services/mod_finder_service.dart';
 import 'package:kyber_launcher/features/server_browser/dialogs/join_server_dialog.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_list_cubit.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -100,34 +101,37 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
         ),
       ).then(dialogCompleted.complete);
 
-      await sl
-          .get<KyberGRPCService>()
-          .serverBrowserClient
-          .getServer(ServerRequest(id: initialServerData.id))
-          .then((_) => null)
-          .onError((e, s) {
-            if (dialogCompleted.isCompleted) {
-              return;
-            }
+      if (!LanServerHelper.isLanServer(initialServerData) ||
+          LanServerHelper.hasApiBackedJoin(initialServerData)) {
+        await sl
+            .get<KyberGRPCService>()
+            .serverBrowserClient
+            .getServer(ServerRequest(id: initialServerData.id))
+            .then((_) => null)
+            .onError((e, s) {
+              if (dialogCompleted.isCompleted) {
+                return;
+              }
 
-            if (e is GrpcError && e.code == StatusCode.notFound) {
-              BlocProvider.of<ServerListCubit>(
-                navigatorKey.currentContext!,
-              ).loadServers();
-              Navigator.pop(navigatorKey.currentContext!);
-              NotificationService.showNotification(
-                message: 'Server not found!',
-                severity: InfoBarSeverity.error,
-              );
-            } else {
-              Navigator.pop(navigatorKey.currentContext!);
-              NotificationService.showNotification(
-                title: 'Error joining server!',
-                message: e.toString(),
-                severity: InfoBarSeverity.error,
-              );
-            }
-          });
+              if (e is GrpcError && e.code == StatusCode.notFound) {
+                BlocProvider.of<ServerListCubit>(
+                  navigatorKey.currentContext!,
+                ).loadServers();
+                Navigator.pop(navigatorKey.currentContext!);
+                NotificationService.showNotification(
+                  message: 'Server not found!',
+                  severity: InfoBarSeverity.error,
+                );
+              } else {
+                Navigator.pop(navigatorKey.currentContext!);
+                NotificationService.showNotification(
+                  title: 'Error joining server!',
+                  message: e.toString(),
+                  severity: InfoBarSeverity.error,
+                );
+              }
+            });
+      }
 
       await dialogCompleted.future;
       final result = await dialogCompleted.future;

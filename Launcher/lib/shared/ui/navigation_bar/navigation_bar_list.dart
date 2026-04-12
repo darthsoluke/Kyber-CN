@@ -3,6 +3,7 @@ import 'dart:async';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/download_manager/models/download_state.dart';
 import 'package:kyber_launcher/features/download_manager/providers/download_manager_cubit.dart';
@@ -37,11 +38,14 @@ class _NavigationBarListState extends State<NavigationBarList> {
   int? _hoveringIndex;
 
   List<NavigationBarEntry> getItems() => [
-    NavigationBarEntry('HOME', 'home'),
-    NavigationBarEntry('HOST', 'server_host'),
-    NavigationBarEntry('STATS', 'stats'),
-    NavigationBarEntry('MODS', 'mods'),
-    NavigationBarEntry('SETTINGS', 'settings'),
+    NavigationBarEntry(Localization.current.text('nav.home'), 'home'),
+    NavigationBarEntry(Localization.current.text('nav.host'), 'server_host'),
+    NavigationBarEntry(Localization.current.text('nav.stats'), 'stats'),
+    NavigationBarEntry(Localization.current.text('nav.mods'), 'mods'),
+    NavigationBarEntry(
+      Localization.current.text('nav.settings'),
+      'settings',
+    ),
   ];
 
   @override

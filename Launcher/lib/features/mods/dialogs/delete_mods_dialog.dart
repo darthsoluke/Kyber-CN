@@ -4,6 +4,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/core/utils/transparent_image.dart';
 import 'package:kyber_launcher/features/mods/extensions/frosty_collection_extension.dart';
@@ -59,11 +60,11 @@ class _DeleteModsDialogState extends State<DeleteModsDialog> {
   @override
   Widget build(BuildContext context) {
     return KyberContentDialog(
-      title: const Text('WARNING'),
+      title: Text(context.l10n.text('common.warning')),
       constraints: const BoxConstraints(maxWidth: 700, maxHeight: 500),
       actions: [
         KyberButton(
-          text: 'DELETE',
+          text: context.l10n.text('common.delete'),
           icon: const Icon(mt.Icons.delete_outline),
           onPressed: () {
             for (final mod in widget.mods) {
@@ -129,15 +130,15 @@ class _DeleteModsDialogState extends State<DeleteModsDialog> {
           },
         ),
         KyberButton(
-          text: 'CANCEL',
+          text: context.l10n.text('common.cancel'),
           onPressed: () => Navigator.of(context).pop(),
         ),
       ],
       content: Column(
         children: [
-          const Text(
-            'DELETING THE FOLLOWING MOD(S) WILL REMOVE THEM FROM COLLECTIONS',
-            style: TextStyle(
+          Text(
+            context.l10n.text('mods.deleteDialog.description'),
+            style: const TextStyle(
               fontFamily: FontFamily.battlefrontUI,
               fontSize: 16,
               color: Colors.white,

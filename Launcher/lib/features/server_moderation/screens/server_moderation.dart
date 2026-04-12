@@ -6,6 +6,7 @@ import 'package:grpc/grpc.dart';
 import 'package:intl/intl.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/kyber/helper/kyber_server_helper.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
@@ -34,6 +35,7 @@ class ServerModeration extends StatefulWidget {
 class _ServerModerationState extends State<ServerModeration> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return BlocBuilder<ModerationCubit, ModerationServerState>(
       builder: (context, state) {
         if (state.id == null) {
@@ -50,14 +52,14 @@ class _ServerModerationState extends State<ServerModeration> {
                     width: 131,
                     children: [
                       const SizedBox(width: 10),
-                      Text('OPTIONS'.toUpperCase()),
+                      Text(l10n.text('common.options')),
                     ],
                   ),
                   ExpandedHeaderSection(
-                    children: [Text('MODERATORS'.toUpperCase())],
+                    children: [Text(l10n.text('moderation.moderators'))],
                   ),
                   ExpandedHeaderSection(
-                    children: [Text('BANNED PLAYERS'.toUpperCase())],
+                    children: [Text(l10n.text('moderation.bannedPlayers'))],
                   ),
                 ],
               ),
@@ -76,7 +78,7 @@ class _ServerModerationState extends State<ServerModeration> {
                               spacing: 15,
                               children: [
                                 KyberButton(
-                                  text: 'PLAY',
+                                  text: l10n.text('common.play'),
                                   onPressed: () async {
                                     if (state.server == null) return;
 
@@ -105,7 +107,7 @@ class _ServerModerationState extends State<ServerModeration> {
                                   },
                                 ),
                                 KyberButton(
-                                  text: 'SPECTATE',
+                                  text: l10n.text('common.spectate'),
                                   onPressed: () {
                                     KyberServerHelper.joinServer(
                                       state.server!,
@@ -122,7 +124,7 @@ class _ServerModerationState extends State<ServerModeration> {
                             child: Column(
                               children: [
                                 KyberButton(
-                                  text: 'COPY LINK',
+                                  text: l10n.text('common.copy'),
                                   onPressed: () {
                                     final uri = Uri(
                                       scheme: 'https',
@@ -137,7 +139,9 @@ class _ServerModerationState extends State<ServerModeration> {
                                       .new(text: uri.toString()),
                                     );
                                     NotificationService.info(
-                                      message: 'Copied to clipboard!',
+                                      message: l10n.text(
+                                        'common.copiedToClipboard',
+                                      ),
                                     );
                                   },
                                 ),
@@ -145,26 +149,26 @@ class _ServerModerationState extends State<ServerModeration> {
                             ),
                           ),
                           const CardSection(),
-                          const Padding(
+                          Padding(
                             padding: EdgeInsets.all(10),
                             child: Column(
                               spacing: 15,
                               children: [
                                 NormalButton(
-                                  label: Text('EXPORT BANS'),
+                                  label: Text(l10n.text('moderation.exportBans')),
                                   onPressed: NotificationService.notImplemented,
                                 ),
                                 NormalButton(
-                                  label: Text('IMPORT BANS'),
+                                  label: Text(l10n.text('moderation.importBans')),
                                   onPressed: NotificationService.notImplemented,
                                 ),
                                 NormalButton(
-                                  label: Text('KICK ALL'),
+                                  label: Text(l10n.text('moderation.kickAll')),
                                   onPressed: NotificationService.notImplemented,
                                 ),
                                 NormalButton(
                                   label: Text(
-                                    'BAN ALL',
+                                    l10n.text('moderation.banAll'),
                                     textAlign: TextAlign.center,
                                   ),
                                   onPressed: NotificationService.notImplemented,
@@ -192,13 +196,13 @@ class _ServerModerationState extends State<ServerModeration> {
             KyberHeader(
               sections: [
                 ExpandedHeaderSection(
-                  children: [Text('Event Log'.toUpperCase())],
+                  children: [Text(l10n.text('moderation.eventLog'))],
                 ),
                 ExpandedHeaderSection(
-                  children: [Text('Light Side'.toUpperCase())],
+                  children: [Text(l10n.text('moderation.lightSide'))],
                 ),
                 ExpandedHeaderSection(
-                  children: [Text('Dark Side'.toUpperCase())],
+                  children: [Text(l10n.text('moderation.darkSide'))],
                 ),
               ],
             ),

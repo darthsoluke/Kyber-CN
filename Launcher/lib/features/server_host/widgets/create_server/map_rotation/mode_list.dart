@@ -2,6 +2,7 @@ import 'package:collection/collection.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/models/mode.dart';
 import 'package:kyber_launcher/features/mods/services/level_declaration_service.dart';
 import 'package:kyber_launcher/features/server_host/providers/host_collection_cubit.dart';
@@ -177,7 +178,14 @@ class _ModeEntry extends StatelessWidget {
                         width: 60,
                         alignment: Alignment.center,
                         child: Text(
-                          '${mode.maxPlayers == -1 ? '∞' : mode.maxPlayers.toString()} PLAYERS',
+                          context.l10n.text(
+                            'common.playerCount',
+                            params: {
+                              'count': mode.maxPlayers == -1
+                                  ? '∞'
+                                  : mode.maxPlayers.toString(),
+                            },
+                          ),
                           style: const TextStyle(
                             fontFamily: FontFamily.battlefrontUI,
                             fontSize: 12,

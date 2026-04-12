@@ -1,7 +1,10 @@
+import 'dart:io';
+
 import 'package:background_downloader/background_downloader.dart';
 import 'package:kyber_launcher/features/download_manager/services/archive_extractor.dart';
 import 'package:kyber_launcher/features/download_manager/services/platform/download_platform_integration.dart';
 import 'package:logging/logging.dart';
+import 'package:path/path.dart';
 
 class DownloadPostProcessor {
   DownloadPostProcessor({
@@ -21,6 +24,16 @@ class DownloadPostProcessor {
 
     try {
       _logger.info('Processing completed download: ${update.task.filename}');
+      final sourcePath = join(update.task.directory, update.task.filename);
+      final processingLock = File('$sourcePath.kyber_processing');
+      try {
+        await processingLock.create(exclusive: true);
+      } on FileSystemException {
+        _logger.info(
+          'Skipping duplicate post-processing for ${update.task.filename}',
+        );
+        return;
+      }
 
       await _platformIntegration?.setIndeterminate();
 
@@ -46,6 +59,11 @@ class DownloadPostProcessor {
     } catch (e, s) {
       _logger.severe('Failed to process completed download', e, s);
     } finally {
+      final sourcePath = join(update.task.directory, update.task.filename);
+      final processingLock = File('$sourcePath.kyber_processing');
+      if (processingLock.existsSync()) {
+        await processingLock.delete();
+      }
       await _platformIntegration?.clear();
     }
   }

@@ -1,4 +1,5 @@
 import 'package:fluent_ui/fluent_ui.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/shared/ui/buttons/button.dart';
 import 'package:kyber_launcher/shared/ui/dialog/kyber_dialog.dart';
 
@@ -13,12 +14,12 @@ class _NotEnoughPlayersDialogState extends State<NotEnoughPlayersDialog> {
   @override
   Widget build(BuildContext context) {
     return KyberContentDialog(
-      title: const Text('NOT ENOUGH PLAYERS'),
+      title: Text(context.l10n.text('host.notEnoughPlayers.title')),
       constraints: const BoxConstraints(maxWidth: 500, maxHeight: 300),
-      content: const Column(
+      content: Column(
         children: [
           Text(
-            'You are about to start a game with less than 2 players. This can end the round immediately. Are you sure you want to continue?',
+            context.l10n.text('host.notEnoughPlayers.description'),
           ),
         ],
       ),
@@ -27,13 +28,13 @@ class _NotEnoughPlayersDialogState extends State<NotEnoughPlayersDialog> {
           onPressed: () {
             Navigator.of(context).pop();
           },
-          text: 'CANCEL',
+          text: context.l10n.text('common.cancel'),
         ),
         KyberButton(
           onPressed: () {
             Navigator.of(context).pop(true);
           },
-          text: 'START',
+          text: context.l10n.text('common.start'),
         ),
       ],
     );

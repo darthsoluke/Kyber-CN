@@ -7,7 +7,7 @@ edition = "2018"
 crate-type = ["cdylib", "staticlib"]
 
 [dependencies]
-flutter_rust_bridge = { version = "=2.11.1", default-features = false, features = ["anyhow", "user-utils", "dart-opaque", "backtrace", "thread-pool", "rust-async", "uuid"] }
+flutter_rust_bridge = { version = "=2.12.0", default-features = false, features = ["anyhow", "user-utils", "dart-opaque", "backtrace", "thread-pool", "rust-async", "uuid"] }
 tokio = { version = "1.36.0", features = ["full", "rt", "rt-multi-thread", "time", "net"] }
 log = "0.4.20"
 maxima-lib = { path = "../../ThirdParty/Maxima/maxima-lib" }

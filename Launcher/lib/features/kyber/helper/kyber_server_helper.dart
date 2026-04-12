@@ -13,6 +13,7 @@ import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart'
 import 'package:kyber_launcher/features/mod_collections/providers/mod_collection_cubit.dart';
 import 'package:kyber_launcher/features/mods/extensions/frosty_collection_extension.dart';
 import 'package:kyber_launcher/features/mods/services/mod_service.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:kyber_launcher/shared/ui/dialog/kyber_dialog.dart';
 import 'package:logging/logging.dart';
@@ -63,56 +64,90 @@ class KyberServerHelper {
       localId: server.id,
     );
 
+    final isLanServer = LanServerHelper.isLanServer(server);
+    LanServerHelper.remember(server);
+
+    String joinToken = '';
+    String joinServerId = server.id;
     var serverIp = server.ip;
-    final currentIp = await KyberNetworkHelper.getCurrentIpAddress();
-    if (serverIp == currentIp) {
-      serverIp = '127.0.0.1';
-    }
-
-    final proxies = navigatorKey.currentContext!
-        .read<KyberProxyCubit>()
-        .state
-        .proxies;
-    var selectedProxy = proxies.firstWhereOrNull(
-      (p) => p.proxy.id == Preferences.general.proxy,
-    );
-    if (selectedProxy == null) {
-      selectedProxy = proxies.firstOrNull;
-      _logger.warning(
-        'No proxy selected, using ${selectedProxy?.proxy.name} instead',
-      );
-      if (selectedProxy == null) {
-        _logger.severe('No proxy available');
-        throw Exception('No proxy available');
-      }
-
-      NotificationService.showNotification(
-        message:
-            'Selected Proxy not available, using ${selectedProxy.proxy.name} instead',
-        severity: InfoBarSeverity.warning,
-      );
-    }
-
-    _logger.info(
-      'Joining server with proxy ${selectedProxy.proxy.name} (${selectedProxy.proxy.ip})',
-    );
 
     try {
       final service = sl.get<KyberGRPCService>();
-      final joinToken = await service.clientServerClient.createJoinToken(
-        .new(
-          server: server.id,
-          password: password,
-        ),
-      );
+      if (isLanServer) {
+        if (!LanServerHelper.isJoinable(server)) {
+          throw Exception(
+            'This LAN server is running in online mode but is not registered with Kyber.',
+          );
+        }
+
+        if (LanServerHelper.hasApiBackedJoin(server)) {
+          final tokenResponse = await service.clientServerClient.createJoinToken(
+            .new(
+              server: server.id,
+              password: password,
+            ),
+          );
+          joinToken = tokenResponse.token;
+        } else {
+          joinServerId = server.id.isEmpty
+              ? LanServerHelper.makeSyntheticId(server.ip, server.port)
+              : server.id;
+        }
+      } else {
+        final currentIp = await KyberNetworkHelper.getCurrentIpAddress();
+        if (serverIp == currentIp) {
+          serverIp = '127.0.0.1';
+        }
+
+        final proxies = navigatorKey.currentContext!
+            .read<KyberProxyCubit>()
+            .state
+            .proxies;
+        var selectedProxy = proxies.firstWhereOrNull(
+          (p) => p.proxy.id == Preferences.general.proxy,
+        );
+        if (selectedProxy == null) {
+          selectedProxy = proxies.firstOrNull;
+          _logger.warning(
+            'No proxy selected, using ${selectedProxy?.proxy.name} instead',
+          );
+          if (selectedProxy == null) {
+            _logger.severe('No proxy available');
+            throw Exception('No proxy available');
+          }
+
+          NotificationService.showNotification(
+            message:
+                'Selected Proxy not available, using ${selectedProxy.proxy.name} instead',
+            severity: InfoBarSeverity.warning,
+          );
+        }
+
+        _logger.info(
+          'Joining server with proxy ${selectedProxy.proxy.name} (${selectedProxy.proxy.ip})',
+        );
+
+        final tokenResponse = await service.clientServerClient.createJoinToken(
+          .new(
+            server: server.id,
+            password: password,
+          ),
+        );
+        joinToken = tokenResponse.token;
+
+        if (server.requiresProxy) {
+          serverIp = selectedProxy.proxy.ip;
+        }
+      }
 
       final joinRequest = JoinServerRequest(
-        id: server.id,
-        ip: server.requiresProxy ? selectedProxy.proxy.ip : serverIp,
-        port: server.requiresProxy ? null : server.port,
-        type: server.requiresProxy ? .PROXIED : .DIRECT,
+        id: joinServerId,
+        ip: isLanServer ? server.ip : serverIp,
+        port: server.requiresProxy && !isLanServer ? null : server.port,
+        type: server.requiresProxy && !isLanServer ? .PROXIED : .DIRECT,
         spectate: spectator ?? false,
-        joinToken: joinToken.token,
+        joinToken: joinToken,
+        password: password ?? '',
       );
 
       if (!sl.isRegistered<MaximaGameInstance>()) {

@@ -3,6 +3,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_search_cubit.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
@@ -29,6 +30,7 @@ class ModSearchDropdownState extends State<ModSearchDropdown> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return BlocListener<ModSearchCubit, SearchState>(
       listener: (context, state) {
         if (state is! SearchLoaded &&
@@ -57,13 +59,13 @@ class ModSearchDropdownState extends State<ModSearchDropdown> {
               height: 1,
             ),
             onChanged: (value) => context.read<ModSearchCubit>().search(value),
-            decoration: const mt.InputDecoration(
-              suffix: Icon(
+            decoration: mt.InputDecoration(
+              suffix: const Icon(
                 mt.Icons.search,
                 color: kInactiveColor,
                 size: 15,
               ),
-              errorStyle: TextStyle(
+              errorStyle: const TextStyle(
                 fontFamily: FontFamily.battlefrontUI,
                 fontSize: 14,
               ),
@@ -71,11 +73,11 @@ class ModSearchDropdownState extends State<ModSearchDropdown> {
               border: mt.InputBorder.none,
               enabledBorder: mt.InputBorder.none,
               focusedBorder: mt.InputBorder.none,
-              contentPadding: EdgeInsets.symmetric(
+              contentPadding: const EdgeInsets.symmetric(
                 horizontal: 10,
               ),
-              hintText: 'SEARCH ...',
-              hintStyle: TextStyle(
+              hintText: l10n.text('common.searchPlaceholder'),
+              hintStyle: const TextStyle(
                 color: kInactiveColor,
                 fontFamily: FontFamily.battlefrontUI,
                 fontSize: 16,
@@ -150,7 +152,7 @@ class MenuWidget extends StatelessWidget {
               if (state.results.isEmpty) {
                 return Center(
                   child: Text(
-                    'No mods found'.toUpperCase(),
+                    context.l10n.text('mods.noModsFound'),
                     style: const TextStyle(
                       fontFamily: FontFamily.battlefrontUI,
                       fontSize: 18,

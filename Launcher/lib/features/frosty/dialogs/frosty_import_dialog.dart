@@ -254,33 +254,10 @@ class _FrostyImportDialogState extends State<FrostyImportDialog> {
                                       margin: const EdgeInsets.symmetric(
                                         vertical: 5,
                                       ),
-                                      child: RadioButton(
-                                        style: RadioButtonThemeData(
-                                          checkedDecoration:
-                                              WidgetStateProperty.resolveWith((
-                                                states,
-                                              ) {
-                                                return BoxDecoration(
-                                                  color: Colors.transparent,
-                                                  shape: BoxShape.circle,
-                                                  border: Border.all(
-                                                    color: (states.isHovered)
-                                                        ? kActiveColor
-                                                        : kWhiteColor,
-                                                    width: !states.isDisabled
-                                                        ? states.isHovered &&
-                                                                  !states
-                                                                      .isPressed
-                                                              ? 3.4
-                                                              : 5.0
-                                                        : 4.0,
-                                                  ),
-                                                );
-                                              }),
-                                        ),
+                                      child: Checkbox(
                                         checked: selectedPacks.contains(index),
                                         onChanged: (value) {
-                                          if (value) {
+                                          if (value ?? false) {
                                             selectedPacks.add(index);
                                           } else {
                                             selectedPacks.remove(index);

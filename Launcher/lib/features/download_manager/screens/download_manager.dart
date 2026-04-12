@@ -4,6 +4,7 @@ import 'package:flutter/gestures.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/download_manager/models/download_state.dart';
 import 'package:kyber_launcher/features/download_manager/models/download_type.dart';
@@ -120,17 +121,18 @@ class _DownloadManagerHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.all(15),
       child: Row(
         children: [
-          const Expanded(
+          Expanded(
             child: Column(
               crossAxisAlignment: .start,
               children: [
                 Text(
-                  'DOWNLOAD MANAGER',
-                  style: TextStyle(
+                  l10n.text('common.downloadManager'),
+                  style: const TextStyle(
                     fontFamily: FontFamily.aurebesh,
                     fontSize: 14,
                     color: kWhiteColor1,
@@ -138,8 +140,8 @@ class _DownloadManagerHeader extends StatelessWidget {
                   ),
                 ),
                 Text(
-                  'DOWNLOAD MANAGER',
-                  style: TextStyle(
+                  l10n.text('common.downloadManager'),
+                  style: const TextStyle(
                     fontFamily: FontFamily.battlefrontUI,
                     fontSize: 24,
                     height: 1,
@@ -199,11 +201,11 @@ class _PausedDownloadsSection extends StatelessWidget {
     return Column(
       crossAxisAlignment: .start,
       children: [
-        const Padding(
+        Padding(
           padding: .symmetric(horizontal: 15, vertical: 10),
           child: Text(
-            'PAUSED DOWNLOADS',
-            style: TextStyle(
+            context.l10n.text('downloadManager.pausedDownloads'),
+            style: const TextStyle(
               fontFamily: FontFamily.battlefrontUI,
               fontSize: 20,
               color: kWhiteColor,
@@ -432,9 +434,11 @@ class _NexusPremiumBanner extends StatelessWidget {
         child: RichText(
           text: TextSpan(
             children: [
-              const TextSpan(
-                text: 'UN-CAP DOWNLOAD SPEEDS WITH ',
-                style: TextStyle(
+              TextSpan(
+                text: context.l10n.text(
+                  'downloadManager.premiumBannerPrefix',
+                ),
+                style: const TextStyle(
                   color: kGrayColor,
                   fontFamily: FontFamily.battlefrontUI,
                   fontSize: 16,

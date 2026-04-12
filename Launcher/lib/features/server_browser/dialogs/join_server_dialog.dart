@@ -9,6 +9,7 @@ import 'package:kyber_launcher/core/core.dart';
 import 'package:kyber_launcher/features/kyber/services/map_helper.dart';
 import 'package:kyber_launcher/features/mod_collections/providers/mod_collection_cubit.dart';
 import 'package:kyber_launcher/features/mods/widgets/collection_list/collection_icon.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
@@ -86,6 +87,22 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
   }
 
   Future<void> checkPassword() async {
+    if (LanServerHelper.isLanServer(serverInfo) &&
+        !LanServerHelper.hasApiBackedJoin(serverInfo)) {
+      if (serverInfo.requiresPassword && password.isEmpty) {
+        NotificationService.showNotification(
+          message: context.l10n.text('join.enterPasswordContinue'),
+          severity: InfoBarSeverity.error,
+        );
+        return;
+      }
+
+      setState(() {
+        correctPassword = true;
+      });
+      return;
+    }
+
     try {
       final service = sl.get<KyberGRPCService>();
       final result = await service.serverBrowserClient.canJoinServer(CanJoinServerRequest(
@@ -100,20 +117,20 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
       }
 
       NotificationService.showNotification(
-        message: 'Invalid password',
+        message: context.l10n.text('join.invalidPassword'),
         severity: InfoBarSeverity.error,
       );
     } catch (e, s) {
       if (e is GrpcError && e.code == StatusCode.notFound) {
         Navigator.pop(context);
         NotificationService.showNotification(
-          message: 'Server not found',
+          message: context.l10n.text('join.serverNotFound'),
           severity: InfoBarSeverity.error,
         );
       } else {
         Logger.root.severe('An error occurred', e, s);
         NotificationService.showNotification(
-          message: 'An error occurred',
+          message: context.l10n.text('join.genericError'),
           severity: InfoBarSeverity.error,
         );
       }
@@ -123,7 +140,7 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
   @override
   Widget build(BuildContext context) {
     return KyberContentDialog(
-      title: Text('Start Game'.toUpperCase()),
+      title: Text(context.l10n.text('join.title')),
       constraints: const BoxConstraints(
         maxHeight: 500,
         maxWidth: 700,
@@ -135,8 +152,8 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
             if (!correctPassword) {
               return Column(
                 children: [
-                  const Text(
-                    'This server requires a password to join.',
+                  Text(
+                    context.l10n.text('join.requiresPassword'),
                     style: TextStyle(
                       color: kWhiteColor,
                     ),
@@ -144,13 +161,13 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                   const SizedBox(
                     height: 10,
                   ),
-                  Align(child: Text('Enter Password'.toUpperCase())),
+                  Align(child: Text(context.l10n.text('join.enterPassword'))),
                   const SizedBox(
                     height: 2.5,
                   ),
                   KyberInput(
                     onFieldSubmitted: (value) => checkPassword(),
-                    placeholder: 'Password',
+                    placeholder: context.l10n.text('common.password'),
                     isSensitive: true,
                     onChanged: (value) {
                       setState(() {
@@ -167,7 +184,7 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                 if (widget.server is ServerGroup) ...[
                   RichText(
                     text: TextSpan(
-                      text: 'JOINING INSTANCE ',
+                      text: context.l10n.text('join.joiningInstance'),
                       style: const TextStyle(
                         fontSize: 16,
                         color: kWhiteColor,
@@ -199,7 +216,7 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                         onClick: () => setState(() => showInstanceSelector = true),
                         builder: (context, hovered) {
                           return Text(
-                            'CHANGE INSTANCE',
+                            context.l10n.text('join.changeInstance'),
                             style: TextStyle(
                               color: hovered ? kActiveColor : kWhiteColor,
                               fontFamily: FontFamily.battlefrontUI,
@@ -252,7 +269,10 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                     Padding(
                                       padding: const EdgeInsets.symmetric(horizontal: 10).copyWith(top: 5),
                                       child: Text(
-                                        'INSTANCE #$instanceId',
+                                        context.l10n.text(
+                                          'join.instance',
+                                          params: {'id': instanceId},
+                                        ),
                                         style: const TextStyle(
                                           fontFamily: FontFamily.battlefrontUI,
                                           fontSize: 16,
@@ -275,7 +295,8 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                                 TextSpan(
                                                   text: serverInfo.levelSetup.modeName.isNotEmpty
                                                       ? serverInfo.levelSetup.modeName
-                                                      : MapHelper.getMode(serverInfo.levelSetup.mode)?.name ?? 'UNKNOWN MODE',
+                                                      : MapHelper.getMode(serverInfo.levelSetup.mode)?.name ??
+                                                          context.l10n.text('join.unknownMode'),
                                                 ),
                                                 const TextSpan(
                                                   text: ' | ',
@@ -286,7 +307,8 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                                 TextSpan(
                                                   text: serverInfo.levelSetup.mapName.isNotEmpty
                                                       ? serverInfo.levelSetup.mapName
-                                                      : MapHelper.getMap(serverInfo.levelSetup.mode, serverInfo.levelSetup.map)?.name ?? 'UNKNOWN MAP',
+                                                      : MapHelper.getMap(serverInfo.levelSetup.mode, serverInfo.levelSetup.map)?.name ??
+                                                          context.l10n.text('join.unknownMap'),
                                                 ),
                                               ],
                                             ),
@@ -311,7 +333,16 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                           );
                         },
                         items: (widget.server as ServerGroup).getSorted().map((e) {
-                          return DropdownItem(value: e, label: 'INSTANCE #${(widget.server as ServerGroup).getInstanceId(e.id)}');
+                          return DropdownItem(
+                            value: e,
+                            label: context.l10n.text(
+                              'join.instance',
+                              params: {
+                                'id': (widget.server as ServerGroup)
+                                    .getInstanceId(e.id),
+                              },
+                            ),
+                          );
                         }).toList(),
                         selectedItem: serverInfo,
                       ),
@@ -319,9 +350,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                   ],
                   const SizedBox(height: 15),
                 ],
-                const Text('PLAY WITH OR WITHOUT COSMETIC MODS'),
-                const Text(
-                  'Select an option to load the game with or without cosmetic mods.',
+                Text(context.l10n.text('join.cosmeticsTitle')),
+                Text(
+                  context.l10n.text('join.cosmeticsDescription'),
                   style: TextStyle(
                     color: kWhiteColor,
                   ),
@@ -332,9 +363,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                 SizedBox(
                   height: 35,
                   child: KyberTabBar(
-                    tabs: const [
-                      Text('WITH COSMETICS'),
-                      Text('WITHOUT COSMETICS'),
+                    tabs: [
+                      Text(context.l10n.text('join.withCosmetics')),
+                      Text(context.l10n.text('join.withoutCosmetics')),
                     ],
                     selectedIndex: withoutMods ? 1 : 0,
                     onChanged: (index) {
@@ -377,7 +408,7 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                     },
                     items: collections.map((e) => DropdownItem(value: e, label: e.title)).toList(),
                     selectedItem: selectedCollection,
-                    placeholder: 'SELECT A COLLECTION',
+                    placeholder: context.l10n.text('join.selectCollection'),
                   ),
                 ],
               ],
@@ -387,32 +418,45 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
       ),
       actions: [
         KyberButton(
-          text: 'Cancel',
+          text: context.l10n.text('common.cancel'),
           onPressed: Navigator.of(context).pop,
         ),
         if (!correctPassword)
           KyberButton(
-            text: 'Next',
+            text: context.l10n.text('common.next'),
             onPressed: checkPassword,
           ),
         if (correctPassword)
           NormalButton(
             onPressed: () => setState(() => spectator = !spectator),
             iconData: spectator ? mt.Icons.check_circle : mt.Icons.circle_outlined,
-            label: const Row(
+            label: Row(
               children: [
-                Icon(mt.Icons.remove_red_eye_outlined),
-                SizedBox(width: 6),
-                Text('SPECTATE'),
+                const Icon(mt.Icons.remove_red_eye_outlined),
+                const SizedBox(width: 6),
+                Text(context.l10n.text('common.spectate')),
               ],
             ),
           ),
         if (correctPassword)
           KyberButton(
-            text: 'Join Server',
+            text: context.l10n.text('common.joinServer'),
             icon: Assets.icons.kyberLogo.svg(height: 20),
             onPressed: () async {
-              if (!serverInfo.requiresPassword) {
+              if (LanServerHelper.isLanServer(serverInfo) &&
+                  !LanServerHelper.isJoinable(serverInfo)) {
+                NotificationService.showNotification(
+                  message: context.l10n.text('join.lanNotRegistered'),
+                  severity: InfoBarSeverity.error,
+                );
+                return;
+              }
+
+              final useApiValidation =
+                  !LanServerHelper.isLanServer(serverInfo) ||
+                      LanServerHelper.hasApiBackedJoin(serverInfo);
+
+              if (useApiValidation && !serverInfo.requiresPassword) {
                 try {
                   final result = await sl.get<KyberGRPCService>().serverBrowserClient.canJoinServer(
                     CanJoinServerRequest(
@@ -433,13 +477,16 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                     Logger.root.severe('An error occurred', e, s);
                     Navigator.pop(context);
                     NotificationService.showNotification(
-                      message: e.message ?? 'You are banned from this server',
+                      message:
+                          e.message ?? context.l10n.text('join.bannedFromServer'),
                       severity: InfoBarSeverity.error,
                     );
                   } else {
                     Logger.root.severe('An error occurred', e, s);
                     NotificationService.showNotification(
-                      message: e is GrpcError ? e.message ?? e.code.toString() : 'An error occurred',
+                      message: e is GrpcError
+                          ? e.message ?? e.code.toString()
+                          : context.l10n.text('join.genericError'),
                       severity: InfoBarSeverity.error,
                     );
                   }

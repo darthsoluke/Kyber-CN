@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_browser_cubit.dart';
 import 'package:kyber_launcher/features/nexusmods/services/nexusmods_service.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
@@ -25,7 +26,7 @@ class BrowserCategoryBox extends StatelessWidget {
         return Column(
           crossAxisAlignment: CrossAxisAlignment.stretch,
           children: [
-            const ClipRRect(
+            ClipRRect(
               borderRadius: BorderRadius.vertical(
                 top: Radius.circular(kDefaultOuterBorderRadius),
               ),
@@ -54,16 +55,18 @@ class BrowserCategoryBox extends StatelessWidget {
                             crossAxisAlignment: CrossAxisAlignment.start,
                             children: [
                               Text(
-                                'MOD CATEGORIES',
-                                style: TextStyle(
+                                context.l10n.text('mods.categories.title'),
+                                style: const TextStyle(
                                   fontFamily: FontFamily.battlefrontUI,
                                   fontSize: 21,
                                   height: 1,
                                 ),
                               ),
                               Text(
-                                'FILTER CONTENT BY CATEGORY',
-                                style: TextStyle(
+                                context.l10n.text(
+                                  'mods.categories.description',
+                                ),
+                                style: const TextStyle(
                                   fontFamily: FontFamily.battlefrontUI,
                                   fontSize: 14,
                                   color: kWhiteColor,

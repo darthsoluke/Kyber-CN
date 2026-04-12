@@ -6,6 +6,7 @@ export 'config/colors.dart';
 export 'config/locales.dart';
 export 'config/strings.dart';
 export 'i18n/app_locale.dart';
+export 'i18n/app_localizations.dart';
 export 'i18n/localization.dart';
 export 'routing/app_router.dart';
 export 'services/app_settings.dart';

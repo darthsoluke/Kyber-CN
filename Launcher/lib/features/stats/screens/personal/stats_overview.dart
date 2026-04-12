@@ -6,6 +6,7 @@ import 'package:flutter_staggered_grid_view/flutter_staggered_grid_view.dart';
 import 'package:intl/intl.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/stats/models/stats_object.dart';
 import 'package:kyber_launcher/features/stats/providers/stats_cubit.dart';
@@ -22,13 +23,98 @@ class UserStats extends StatefulWidget {
   State<UserStats> createState() => _UserStatsState();
 }
 
-String formatPlaytime(Duration duration) {
+String formatPlaytime(BuildContext context, Duration duration) {
+  final l10n = context.l10n;
   if (duration.inHours > 0) {
-    return '${NumberFormat.decimalPattern().format(duration.inHours)} HRS';
+    return '${NumberFormat.decimalPattern().format(duration.inHours)} ${l10n.text('stats.time.hours')}';
   } else if (duration.inMinutes > 0) {
-    return '${duration.inMinutes} MIN';
+    return '${duration.inMinutes} ${l10n.text('stats.time.minutes')}';
   } else {
-    return '${duration.inSeconds} SEC';
+    return '${duration.inSeconds} ${l10n.text('stats.time.seconds')}';
+  }
+}
+
+String localizeStatsName(BuildContext context, String name) {
+  final l10n = context.l10n;
+  switch (name) {
+    case 'Boba Fett':
+      return l10n.text('stats.hero.bobaFett');
+    case 'Bossk':
+      return l10n.text('stats.hero.bossk');
+    case 'Darth Vader':
+      return l10n.text('stats.hero.darthVader');
+    case 'Emperor':
+      return l10n.text('stats.hero.emperor');
+    case 'Grievous':
+      return l10n.text('stats.hero.grievous');
+    case 'Iden':
+      return l10n.text('stats.hero.iden');
+    case 'Kylo Ren':
+      return l10n.text('stats.hero.kyloRen');
+    case 'Maul':
+      return l10n.text('stats.hero.maul');
+    case 'Phasma':
+      return l10n.text('stats.hero.phasma');
+    case 'Dooku':
+      return l10n.text('stats.hero.dooku');
+    case 'BB9E':
+      return l10n.text('stats.hero.bb9E');
+    case 'Chewbacca':
+      return l10n.text('stats.hero.chewbacca');
+    case 'Han Solo':
+      return l10n.text('stats.hero.hanSolo');
+    case 'Lando':
+      return l10n.text('stats.hero.lando');
+    case 'Leia':
+      return l10n.text('stats.hero.leia');
+    case 'Luke':
+      return l10n.text('stats.hero.luke');
+    case 'Rey':
+      return l10n.text('stats.hero.rey');
+    case 'Yoda':
+      return l10n.text('stats.hero.yoda');
+    case 'Finn':
+      return l10n.text('stats.hero.finn');
+    case 'Obi Wan':
+      return l10n.text('stats.hero.obiWan');
+    case 'Anakin':
+      return l10n.text('stats.hero.anakin');
+    case 'BB8':
+      return l10n.text('stats.hero.bb8');
+    case 'Assault':
+      return l10n.text('stats.class.assault');
+    case 'Heavy':
+      return l10n.text('stats.class.heavy');
+    case 'Officer':
+      return l10n.text('stats.class.officer');
+    case 'Specialist':
+      return l10n.text('stats.class.specialist');
+    case 'Infantry':
+      return l10n.text('stats.entity.infantry');
+    case 'Aerial':
+      return l10n.text('stats.entity.aerial');
+    case 'Enforcer':
+      return l10n.text('stats.entity.enforcer');
+    case 'Infiltrator':
+      return l10n.text('stats.entity.infiltrator');
+    case 'Heroes':
+      return l10n.text('stats.entity.heroes');
+    case 'Armored':
+      return l10n.text('stats.entity.armored');
+    case 'Artillery':
+      return l10n.text('stats.entity.artillery');
+    case 'Speeder':
+      return l10n.text('stats.entity.speeder');
+    case 'Ground Vehicle':
+      return l10n.text('stats.vehicle.armor');
+    case 'Fighter':
+      return l10n.text('stats.entity.fighter');
+    case 'Interceptor':
+      return l10n.text('stats.entity.interceptor');
+    case 'Bomber':
+      return l10n.text('stats.entity.bomber');
+    default:
+      return name.toUpperCase();
   }
 }
 
@@ -49,7 +135,7 @@ class _UserStatsState extends State<UserStats> {
               }
 
               if (state.playerStats == null) {
-                return const Center(child: Text('No stats found'));
+                return Center(child: Text(context.l10n.text('stats.noStatsFound')));
               }
 
               return Padding(
@@ -119,7 +205,10 @@ class _UserStatsState extends State<UserStats> {
                                                   ),
                                                 ),
                                                 AutoSizeText(
-                                                  '${formatPlaytime(state.playerStats!.totalPlaytime)}',
+                                                  formatPlaytime(
+                                                    context,
+                                                    state.playerStats!.totalPlaytime,
+                                                  ),
                                                   style: const TextStyle(
                                                     height: 1.1,
                                                     fontFamily: FontFamily
@@ -256,9 +345,11 @@ class _UserStatsState extends State<UserStats> {
                                                   height: 50,
                                                   child: Column(
                                                     children: [
-                                                      const Text(
-                                                        'MOST PLAYED',
-                                                        style: TextStyle(
+                                                      Text(
+                                                        context.l10n.text(
+                                                          'stats.mostPlayed',
+                                                        ),
+                                                        style: const TextStyle(
                                                           fontFamily: FontFamily
                                                               .battlefrontUI,
                                                           color: kWhiteColor1,
@@ -267,7 +358,10 @@ class _UserStatsState extends State<UserStats> {
                                                         ),
                                                       ),
                                                       Text(
-                                                        char.name.toUpperCase(),
+                                                        localizeStatsName(
+                                                          context,
+                                                          char.name,
+                                                        ),
                                                         style: const TextStyle(
                                                           fontFamily: FontFamily
                                                               .battlefrontUI,
@@ -293,34 +387,34 @@ class _UserStatsState extends State<UserStats> {
                                 child: Builder(
                                   builder: (context) {
                                     final stats = {
-                                      'TOTAL KILLS':
+                                      context.l10n.text('stats.totalKills'):
                                           NumberFormat.decimalPattern().format(
                                             state.playerStats!.totalKills,
                                           ),
-                                      'TOTAL DEATHS':
+                                      context.l10n.text('stats.totalDeaths'):
                                           NumberFormat.decimalPattern().format(
                                             state.playerStats!.totalDeaths,
                                           ),
-                                      'K/D RATIO': state.playerStats!
+                                      context.l10n.text('stats.kdRatio'): state.playerStats!
                                           .getKd()
                                           .toStringAsFixed(2),
-                                      'ASSISTS': NumberFormat.decimalPattern()
+                                      context.l10n.text('stats.assists'): NumberFormat.decimalPattern()
                                           .format(
                                             state.playerStats!.eliminations,
                                           ),
-                                      'DAMAGE DONE':
+                                      context.l10n.text('stats.damageDone'):
                                           NumberFormat.decimalPattern().format(
                                             state.playerStats!.totalScore,
                                           ),
-                                      'SUICIDES': NumberFormat.decimalPattern()
+                                      context.l10n.text('stats.suicides'): NumberFormat.decimalPattern()
                                           .format(state.playerStats!.suicides),
-                                      'GAMES WON': NumberFormat.decimalPattern()
+                                      context.l10n.text('stats.gamesWon'): NumberFormat.decimalPattern()
                                           .format(state.playerStats!.totalWins),
-                                      'GAMES LOST':
+                                      context.l10n.text('stats.gamesLost'):
                                           NumberFormat.decimalPattern().format(
                                             state.playerStats!.totalLosses,
                                           ),
-                                      'WIN RATE':
+                                      context.l10n.text('stats.winRate'):
                                           '${state.playerStats!.getWinRate().toStringAsFixed(1)}%',
                                     };
                                     return StaggeredGrid.count(
@@ -364,17 +458,19 @@ class _UserStatsState extends State<UserStats> {
                                 ),
                                 children: [
                                   _StatSection(
-                                    title: 'UNITS',
+                                    title: context.l10n.text('stats.units'),
                                     data: state.playerStats!.unitStats.values
                                         .toList(),
                                   ),
                                   _StatSection(
-                                    title: 'VEHICLES',
+                                    title: context.l10n.text('stats.vehicles'),
                                     data: state.playerStats!.vehicleStats.values
                                         .toList(),
                                   ),
                                   _StatSection(
-                                    title: 'STARFIGHTER',
+                                    title: context.l10n.text(
+                                      'stats.starfighters',
+                                    ),
                                     data: state
                                         .playerStats!
                                         .starFighterStats
@@ -453,9 +549,10 @@ class _StatSection extends StatelessWidget {
                   Flexible(
                     child: _ClassContainer(
                       name: data[i].name,
+                      displayName: localizeStatsName(context, data[i].name),
                       portrait: data[i].portrait,
                       rank: data[i].rank,
-                      timePlayed: formatPlaytime(data[i].timePlayed),
+                      timePlayed: formatPlaytime(context, data[i].timePlayed),
                     ),
                   ),
               ],
@@ -470,6 +567,7 @@ class _StatSection extends StatelessWidget {
 class _ClassContainer extends StatelessWidget {
   const _ClassContainer({
     required this.name,
+    required this.displayName,
     required this.timePlayed,
     required this.portrait,
     this.rank,
@@ -477,6 +575,7 @@ class _ClassContainer extends StatelessWidget {
 
   final ImageProvider portrait;
   final String name;
+  final String displayName;
   final int? rank;
   final String timePlayed;
 
@@ -547,7 +646,7 @@ class _ClassContainer extends StatelessWidget {
                       Column(
                         children: [
                           Text(
-                            name.toUpperCase(),
+                            displayName,
                             style: const TextStyle(
                               fontSize: 15,
                               fontFamily: FontFamily.battlefrontUI,

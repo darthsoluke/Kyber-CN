@@ -14,8 +14,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     HWND hwnd = ::FindWindow(L"FLUTTER_RUNNER_WIN32_WINDOW", L"KYBER Launcher");
     if (hwnd != NULL) {
       DispatchToProtocolHandler(hwnd);
-
-      //::ShowWindow(hwnd, SW_NORMAL);
+      ::ShowWindow(hwnd, ::IsIconic(hwnd) ? SW_RESTORE : SW_SHOWNORMAL);
       ::SetForegroundWindow(hwnd);
       return EXIT_FAILURE;
     }

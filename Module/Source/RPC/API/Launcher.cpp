@@ -52,11 +52,18 @@ void LauncherInterface::Initialize() const
         info.description = server.description();
         info.password = server.password();
 
-        auto entry = g_program->m_server->m_mapRotation.GetNextEntry();
-        info.level = entry.level;
-        info.mode = entry.mode;
+        const MapRotationEntry* entry = g_program->m_server->m_mapRotation.GetNextEntry();
+        if (entry == nullptr)
+        {
+            KYBER_LOG(Error, "[RPC] Launcher start request is missing a map rotation entry");
+            break;
+        }
+
+        info.level = entry->level;
+        info.mode = entry->mode;
 
         info.maxPlayers = server.maxplayers();
+        info.port = server.port() > 0 && server.port() <= 65535 ? server.port() : 25200;
 
         info.loadCommands.reserve(request.startupcommands_size());
         for (const auto& command : request.startupcommands())
@@ -64,23 +71,26 @@ void LauncherInterface::Initialize() const
             info.loadCommands.push_back(command);
         }
 
-        auto* event = new MainLoopInitStartServerEvent();
-        event->info = info;
-        g_program->m_server->m_eventManager->QueueEvent(event);
+        if (server.has_onlinemode())
+        {
+            g_program->m_server->m_onlineMode = server.onlinemode();
+        }
+
+        g_program->m_server->m_creationInfo = info;
         break;
     }
     case kyber_interface::InitializeRequest::kJoinServer: {
         const auto& joinServer = request.joinserver();
 
-        auto* event = new MainLoopInitJoinServerEvent();
-        event->id = joinServer.id();
-        event->ip = joinServer.ip();
-        event->port = joinServer.port();
-        event->spectate = joinServer.spectate();
-        event->proxied = joinServer.type() == kyber_interface::JoinServerType::PROXIED;
-        event->password = "";
+        g_program->m_client->QueueInitialJoin(
+            joinServer.id(),
+            joinServer.ip(),
+            static_cast<uint16_t>(joinServer.port()),
+            joinServer.password(),
+            joinServer.spectate(),
+            joinServer.type() == kyber_interface::JoinServerType::PROXIED);
         g_program->m_client->m_joinToken = joinServer.jointoken();
-        g_program->m_client->m_eventManager->QueueEvent(event);
+        g_program->m_server->m_onlineMode = !joinServer.jointoken().empty();
         break;
     }
     case kyber_interface::InitializeRequest::STARTSTATE_NOT_SET:

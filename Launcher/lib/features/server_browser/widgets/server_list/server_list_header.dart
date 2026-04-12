@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
 
 class ServerListHeader extends StatelessWidget {
@@ -10,6 +11,7 @@ class ServerListHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       decoration: const BoxDecoration(
         border: Border.symmetric(
@@ -21,26 +23,26 @@ class ServerListHeader extends StatelessWidget {
       ),
       alignment: Alignment.center,
       child: KyberHeader(
-        title: 'SERVER BROWSER',
+        title: l10n.text('common.serverBrowser'),
         headerLength: 150,
         sections: [
           const ExpandedHeaderSection(children: []),
-          const FixedWidthHeaderSection(
+          FixedWidthHeaderSection(
             width: 99,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'PLAYERS',
+                l10n.text('common.players'),
                 textAlign: TextAlign.left,
               ),
             ],
           ),
-          const FixedWidthHeaderSection(
+          FixedWidthHeaderSection(
             width: 120,
             mainAxisAlignment: MainAxisAlignment.center,
             children: [
               Text(
-                'SERVER TYPE',
+                l10n.text('serverBrowser.filter.serverType'),
                 textAlign: TextAlign.left,
               ),
             ],

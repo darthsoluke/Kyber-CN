@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_fadein/flutter_fadein.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/models/maps.dart';
 import 'package:kyber_launcher/features/kyber/models/mode.dart';
 import 'package:kyber_launcher/features/kyber/models/modes.dart';
@@ -61,7 +62,7 @@ class _ModerationServerListState extends State<ModerationServerList> {
                             if (servers.isEmpty) {
                               return Center(
                                 child: StrokeText(
-                                  'No servers found'.toUpperCase(),
+                                  context.l10n.text('common.noServersFound'),
                                   color: kWhiteColor,
                                   fontWeight: FontWeight.w500,
                                   strokeColor: kWhiteBackgroundColor.darken(20),
@@ -137,7 +138,7 @@ class _Header extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const DecoratedBox(
+    return DecoratedBox(
       decoration: BoxDecoration(
         border: Border.symmetric(
           vertical: BorderSide(
@@ -147,9 +148,9 @@ class _Header extends StatelessWidget {
         ),
       ),
       child: KyberHeader(
-        title: 'Server Browser',
+        title: context.l10n.text('common.serverBrowser'),
         headerLength: 150,
-        sections: [
+        sections: const [
           ExpandedHeaderSection(
             children: [],
           ),

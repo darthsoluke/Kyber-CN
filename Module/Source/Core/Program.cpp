@@ -387,8 +387,15 @@ void MessageManagerDispatchMessageHk(void* inst, Message* message)
             g_program->m_scriptManager->GetEventManager().Fire("Level:Complete");
         }
 
-        MapRotationEntry rotation = g_program->m_server->m_mapRotation.GetNextEntry();
-        g_program->m_server->LoadNextLevel(rotation.level.c_str(), rotation.mode.c_str());
+        const MapRotationEntry* rotation = g_program->m_server->m_mapRotation.GetNextEntry();
+        if (rotation == nullptr)
+        {
+            KYBER_LOG(Warning, "[Server] No map rotation entry is available for the next level");
+        }
+        else
+        {
+            g_program->m_server->LoadNextLevel(rotation->level.c_str(), rotation->mode.c_str());
+        }
     }
     else if (name == "ServerLevelLoadedMessage")
     {
@@ -511,8 +518,7 @@ bool MainLoopInitHk(MainLoop* inst)
     bool result = trampoline(inst);
 
     KYBER_LOG(Info, "[Engine] Processing initial events");
-    g_program->m_server->m_eventManager->ProcessEventQueue();
-    g_program->m_client->m_eventManager->ProcessEventQueue();
+    g_program->m_client->ProcessPendingJoin();
 
     if (g_program->m_settingsManager != nullptr)
     {
@@ -564,15 +570,14 @@ void GameSimulationInitDedicatedServerHk(void* inst, void* createInfo)
         DirtySockSocketManager_ctor(g_program->m_server->m_socketManager, FB_STATIC_ARENA, 1168);
     }
 
-    NetworkSettings* networkSettings = Settings<NetworkSettings>("Network");
-    networkSettings->MaxClientCount = 64;
+    const ServerCreationInfo& serverInfo = g_program->m_server->m_creationInfo.value();
 
-    GameSettings* gameSettings = Settings<GameSettings>("Game");
-    gameSettings->MaxSpectatorCount = 4;
-
-    NetObjectSystemSettings* netObjectSettings = Settings<NetObjectSystemSettings>("NetObjectSystem");
-    netObjectSettings->MaxServerConnectionCount = 64;
-    // netObjectSettings->DeltaCompressionSettings.IsEnabled = false;
+    g_program->m_server->ApplyRuntimeSettings(serverInfo);
+    g_program->m_server->m_heartbeatTimer = 0.f;
+    if (g_program->m_server->m_lanDiscovery)
+    {
+        g_program->m_server->m_lanDiscovery->Start();
+    }
 
     if (g_program->m_server->m_onlineMode)
     {
@@ -581,11 +586,8 @@ void GameSimulationInitDedicatedServerHk(void* inst, void* createInfo)
 
     g_program->m_server->m_socketSpawnInfo = SocketSpawnInfo(false, "", g_program->m_server->m_serverId, "");
 
-    MapRotationEntry rotation = g_program->m_server->m_mapRotation.GetNextEntry();
-
     LevelSetup levelSetup;
-    InitLevelSetup(
-        &levelSetup, g_program->m_server->m_creationInfo->level.c_str(), g_program->m_server->m_creationInfo->mode.c_str(), "", "");
+    InitLevelSetup(&levelSetup, serverInfo.level.c_str(), serverInfo.mode.c_str(), "", "");
 
     WSGameSettings* wsSettings = Settings<WSGameSettings>("Whiteshark");
     wsSettings->AutoBalanceTeamsOnNeutral = true;
@@ -594,6 +596,7 @@ void GameSimulationInitDedicatedServerHk(void* inst, void* createInfo)
     spawnInfo.isSinglePlayer = false;
     spawnInfo.isLocalHost = false;
     spawnInfo.isDedicated = true;
+    spawnInfo.serverPort = serverInfo.port;
     spawnInfo.saveData.init(0);
     GameSimulationSpawnServerHk(inst, spawnInfo);
 }

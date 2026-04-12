@@ -35,9 +35,11 @@ class AccountsAndUpdates extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
     return SuperListView(
       children: [
-        const SettingsHeader(title: 'ACCOUNTS'),
+        SettingsHeader(title: l10n.text('settings.accounts.header')),
         HiveListener(
           box: box,
           keys: const ['nexusmods_login'],
@@ -45,10 +47,10 @@ class AccountsAndUpdates extends StatelessWidget {
             builder: (context, state) => KyberTable(
               items: [
                 KyberTableItem.selector(
-                  title: 'PROXY',
+                  title: l10n.text('settings.proxy'),
                   items: state.proxies.map((e) {
                     final ping = e.ping == 99999
-                        ? 'UNAVAILABLE'
+                        ? l10n.text('common.unavailable')
                         : '${e.ping}ms';
                     return KyberSelectorItem<String>(
                       title: '${e.proxy.name} ($ping)',
@@ -62,7 +64,7 @@ class AccountsAndUpdates extends StatelessWidget {
                   },
                 ),
                 KyberTableItem.button(
-                  title: 'Reset Kyber Token',
+                  title: l10n.text('settings.resetKyberToken'),
                   onClick: () async {
                     final result = await showKyberDialog<bool?>(
                       context: context,
@@ -77,10 +79,10 @@ class AccountsAndUpdates extends StatelessWidget {
 
                     await context.read<MaximaCubit>().requestLogin();
                   },
-                  text: 'Reset',
+                  text: l10n.text('common.reset'),
                 ),
                 KyberTableItem.button(
-                  title: 'NexusMods',
+                  title: l10n.text('settings.nexusMods'),
                   onClick: () async {
                     if (Preferences.nexusMods.isLoggedIn) {
                       await sl.get<NexusModsService>().deleteToken();
@@ -100,11 +102,13 @@ class AccountsAndUpdates extends StatelessWidget {
                       );
                     }
                   },
-                  text: Preferences.nexusMods.isLoggedIn ? 'Logout' : 'Login',
+                  text: Preferences.nexusMods.isLoggedIn
+                      ? l10n.text('common.logout')
+                      : l10n.text('common.login'),
                 ),
                 KyberTableItem.button(
-                  title: 'Logout',
-                  text: 'EA Logout',
+                  title: l10n.text('common.logout'),
+                  text: l10n.text('settings.eaLogout'),
                   onClick: () async {
                     await File(
                       '${Platform.environment['APPDATA']}\\ArmchairDevelopers\\Maxima\\data\\auth.toml',
@@ -129,14 +133,14 @@ class AccountsAndUpdates extends StatelessWidget {
             ),
           ),
         ),
-        const SettingsHeader(title: 'LINKED ACCOUNTS'),
+        SettingsHeader(title: l10n.text('settings.linkedAccounts.header')),
         BlocBuilder<MaximaCubit, MaximaState>(
           bloc: context.read<MaximaCubit>(),
           builder: (context, _) => KyberTable(
             items: [
               if (context.read<MaximaCubit>().state.discordData != null)
                 KyberTableItem.custom(
-                  title: 'Discord',
+                  title: l10n.text('settings.discord'),
                   onClick: () async {
                     await sl
                         .get<KyberGRPCService>()
@@ -176,7 +180,7 @@ class AccountsAndUpdates extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '${discord.globalName}   |   Unlink',
+                              '${discord.globalName}   |   ${l10n.text('settings.unlink')}',
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w500,
@@ -191,8 +195,8 @@ class AccountsAndUpdates extends StatelessWidget {
                 )
               else
                 KyberTableItem.button(
-                  title: 'Discord',
-                  text: 'Connect',
+                  title: l10n.text('settings.discord'),
+                  text: l10n.text('common.connect'),
                   onClick: () async {
                     final service = sl.get<KyberGRPCService>();
                     final host = service.httpHostname;
@@ -207,8 +211,8 @@ class AccountsAndUpdates extends StatelessWidget {
                 ),
               if (!context.read<MaximaCubit>().state.isPatron)
                 KyberTableItem.button(
-                  title: 'Connect Patreon',
-                  text: 'Connect',
+                  title: l10n.text('settings.connectPatreon'),
+                  text: l10n.text('common.connect'),
                   onClick: () async {
                     await showKyberDialog(
                       context: context,
@@ -222,16 +226,16 @@ class AccountsAndUpdates extends StatelessWidget {
             ],
           ),
         ),
-        const SettingsHeader(title: 'UPDATES'),
+        SettingsHeader(title: l10n.text('settings.updates.header')),
         KyberTable(
           items: [
             KyberTableItem.switchButton(
-              title: 'Automatically Update',
+              title: l10n.text('settings.automaticallyUpdate'),
               value: true,
             ),
             KyberTableItem.button(
-              title: 'Release Channel',
-              text: 'Select',
+              title: l10n.text('settings.releaseChannel'),
+              text: l10n.text('common.select'),
               onClick: () async {
                 await showKyberDialog(
                   context: context,
@@ -246,8 +250,8 @@ class AccountsAndUpdates extends StatelessWidget {
               },
             ),
             KyberTableItem.button(
-              title: 'Force update',
-              text: 'UPDATE NOW',
+              title: l10n.text('settings.forceUpdate'),
+              text: l10n.text('settings.updateNow'),
               onClick: () => showKyberDialog(
                 context: context,
                 builder: (_) => const UpdateDialog(),
@@ -255,7 +259,7 @@ class AccountsAndUpdates extends StatelessWidget {
             ),
           ],
         ),
-        const SettingsHeader(title: 'OTHER'),
+        SettingsHeader(title: l10n.text('settings.other.header')),
         HiveListener(
           box: box,
           keys: const [
@@ -269,14 +273,14 @@ class AccountsAndUpdates extends StatelessWidget {
           builder: (_) => KyberTable(
             items: [
               KyberTableItem.switchButton(
-                title: 'Remember Window Position',
+                title: l10n.text('settings.rememberWindowPosition'),
                 value: Preferences.customization.rememberWindowPosition,
                 onChange: (value) async {
                   Preferences.customization.rememberWindowPosition = value;
                 },
               ),
               KyberTableItem.button(
-                title: 'Licenses',
+                title: l10n.text('settings.licenses'),
                 onClick: () {
                   Navigator.of(context).push(
                     mt.MaterialPageRoute<void>(
@@ -317,11 +321,11 @@ class AccountsAndUpdates extends StatelessWidget {
                     ),
                   );
                 },
-                text: 'Show Licenses',
+                text: l10n.text('settings.showLicenses'),
               ),
               KyberTableItem.button(
-                title: 'Logout',
-                text: 'EA Logout',
+                title: l10n.text('common.logout'),
+                text: l10n.text('settings.eaLogout'),
                 onClick: () async {
                   await File(
                     '${Platform.environment['APPDATA']}\\ArmchairDevelopers\\Maxima\\data\\auth.toml',
@@ -342,7 +346,7 @@ class AccountsAndUpdates extends StatelessWidget {
                 },
               ),
               KyberTableItem.switchButton(
-                title: 'Developer Mode',
+                title: l10n.text('settings.developerMode'),
                 value: Preferences.general.developerMode,
                 onChange: (value) {
                   Preferences.general.developerMode = value;
@@ -350,8 +354,8 @@ class AccountsAndUpdates extends StatelessWidget {
               ),
               if (Preferences.general.developerMode) ...[
                 KyberTableItem.button(
-                  title: 'Environment',
-                  text: 'Select',
+                  title: l10n.text('settings.environment'),
+                  text: l10n.text('common.select'),
                   onClick: () {
                     showKyberDialog(
                       context: context,
@@ -365,7 +369,7 @@ class AccountsAndUpdates extends StatelessWidget {
               )) ...[
                 ...[
                   KyberTableItem<String>.selector(
-                    title: 'API Environment',
+                    title: l10n.text('settings.apiEnvironment'),
                     items: ['prod', 'stage'].map((e) {
                       return KyberSelectorItem<String>(
                         title: e,
@@ -396,8 +400,8 @@ class AccountsAndUpdates extends StatelessWidget {
                     },
                   ),
                   KyberTableItem.button(
-                    title: 'Set Nexus API Token',
-                    text: 'Set token',
+                    title: l10n.text('settings.setNexusApiToken'),
+                    text: l10n.text('settings.setToken'),
                     onClick: () async {
                       final token = await showKyberDialog<String?>(
                         context: context,
@@ -412,8 +416,8 @@ class AccountsAndUpdates extends StatelessWidget {
                     },
                   ),
                   KyberTableItem.button(
-                    title: 'Set Background Image',
-                    text: 'Set Image',
+                    title: l10n.text('settings.setBackgroundImage'),
+                    text: l10n.text('settings.setImage'),
                     onClick: () async {
                       final result = await showKyberDialog<String?>(
                         context: context,
@@ -433,20 +437,20 @@ class AccountsAndUpdates extends StatelessWidget {
                     },
                   ),
                   KyberTableItem.switchButton(
-                    title: 'Dummy Server',
+                    title: l10n.text('settings.dummyServer'),
                     onChange: (value) => Preferences.admin.dummyServer = value,
                     value: Preferences.admin.dummyServer,
                   ),
                 ],
                 KyberTableItem.switchButton(
-                  title: 'Remove Background',
+                  title: l10n.text('settings.removeBackground'),
                   value: Preferences.admin.removeBackground,
                   onChange: (value) =>
                       Preferences.admin.removeBackground = value,
                 ),
                 KyberTableItem.button(
-                  title: 'Copy Kyber Token',
-                  text: 'Copy',
+                  title: l10n.text('settings.copyKyberToken'),
+                  text: l10n.text('common.copy'),
                   onClick: () async {
                     final token = sl.get<KyberGRPCService>().token;
                     if (token == null) {

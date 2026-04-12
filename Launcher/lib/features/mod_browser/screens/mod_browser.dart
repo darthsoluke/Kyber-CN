@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_browser_cubit.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_search_cubit.dart';
 import 'package:kyber_launcher/features/mod_browser/widgets/nmb_mod_tile.dart';
@@ -37,12 +38,12 @@ class _CategorizedModListState extends State<CategorizedModList> {
             mainAxisAlignment: MainAxisAlignment.center,
             spacing: 20,
             children: [
-              const Text('Please sign in to Nexus Mods to view mods'),
+              Text(context.l10n.text('mods.loginToViewNexus')),
               Row(
                 mainAxisAlignment: MainAxisAlignment.center,
                 children: [
                   KyberButton(
-                    text: 'LOGIN',
+                    text: context.l10n.text('common.login'),
                     onPressed: () async {
                       await showKyberDialog(
                         context: context,
@@ -71,7 +72,7 @@ class _CategorizedModListState extends State<CategorizedModList> {
               if (searchState.results.isEmpty) {
                 return Center(
                   child: Text(
-                    'No mods found'.toUpperCase(),
+                    context.l10n.text('mods.noModsFound'),
                     style: const TextStyle(
                       fontFamily: FontFamily.battlefrontUI,
                       fontSize: 17,

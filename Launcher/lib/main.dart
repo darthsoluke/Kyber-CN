@@ -15,6 +15,7 @@ import 'package:hive_ce_flutter/hive_flutter.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
 import 'package:kyber_launcher/core/i18n/app_locale.dart';
+import 'package:kyber_launcher/core/i18n/app_localizations.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/core/services/module_version_service.dart';
 import 'package:kyber_launcher/core/services/native_dialog.dart';
@@ -36,6 +37,7 @@ import 'package:kyber_launcher/features/navigation_bar/providers/status_cubit.da
 import 'package:kyber_launcher/features/nexusmods/widgets/graphql_provider.dart';
 import 'package:kyber_launcher/features/server_browser/providers/ingame_view_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_browser_cubit.dart';
+import 'package:kyber_launcher/features/server_browser/providers/lan_server_list_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_list_cubit.dart';
 import 'package:kyber_launcher/features/server_moderation/providers/moderation_cubit.dart';
 import 'package:kyber_launcher/features/server_moderation/providers/moderation_servers_cubit.dart';
@@ -53,6 +55,7 @@ import 'package:media_kit/media_kit.dart';
 import 'package:package_info_plus/package_info_plus.dart';
 import 'package:path/path.dart';
 import 'package:rhttp/rhttp.dart';
+import 'package:rhttp/src/rust/frb_generated.dart' as rhttp_frb;
 import 'package:sentry_flutter/sentry_flutter.dart';
 import 'package:sentry_logging/sentry_logging.dart';
 import 'package:toastification/toastification.dart';
@@ -99,7 +102,8 @@ Future<void> initSentry(String currentVersion) async => SentryFlutter.init(
           return null;
         }
 
-        if (exception is FlutterError && exception.message.contains('RenderFlex')) {
+        if (exception is FlutterError &&
+            exception.message.contains('RenderFlex')) {
           return null;
         }
 
@@ -130,8 +134,29 @@ Future<void> loadCerts() async {
 
 String? launcherVersion;
 
+Future<void> initializeRhttp() async {
+  try {
+    await Rhttp.init();
+  } catch (error, stackTrace) {
+    if (error.toString().contains("rhttp's codegen version")) {
+      Logger('bootstrap').warning(
+        'Rhttp codegen/runtime version mismatch detected. Retrying in compatibility mode.',
+      );
+      await rhttp_frb.RustLib.init(forceSameCodegenVersion: false);
+      return;
+    }
+
+    Logger('bootstrap').severe(
+      'Rhttp initialization failed',
+      error,
+      stackTrace,
+    );
+    rethrow;
+  }
+}
+
 void main() async {
-  if (Platform.isWindows &&! kDebugMode) {
+  if (Platform.isWindows && !kDebugMode) {
     final exeDir = dirname(Platform.resolvedExecutable);
     final rustLib = File(join(exeDir, 'rust_lib.dll'));
     if (!rustLib.existsSync()) {
@@ -140,7 +165,6 @@ void main() async {
     }
   }
 
-  await Rhttp.init();
   await MaximaLib.init();
 
   await runZonedGuarded(
@@ -157,6 +181,7 @@ void main() async {
       }
 
       CustomLogger.initialize();
+      await initializeRhttp();
 
       final info = await PackageInfo.fromPlatform();
       launcherVersion = '${info.version}-#${info.buildNumber}';
@@ -244,13 +269,14 @@ class _AppState extends State<App> {
     return ToastificationWrapper(
       config: ToastificationConfig(
         animationDuration: const Duration(seconds: 1),
-        marginBuilder: (context, child) => const .only(bottom: 20, left: 20, right: 20),
+        marginBuilder: (context, child) =>
+            const .only(bottom: 20, left: 20, right: 20),
       ),
       child: HiveListener(
         box: box,
         keys: const ['locale', 'activeColor'],
         builder: (_) => FluentApp.router(
-          title: 'KYBER Launcher',
+          title: AppLocalizations.current.text('app.title'),
           color: kActiveColor,
           darkTheme: FluentThemeData(
             accentColor: kActiveColor.toAccentColor(
@@ -294,10 +320,11 @@ class _AppState extends State<App> {
           themeMode: ThemeMode.dark,
           locale: AppLocale.getLocale(),
           localizationsDelegates: const [
+            AppLocalizations.delegate,
             ...GlobalMaterialLocalizations.delegates,
             FormBuilderLocalizations.delegate,
           ],
-          supportedLocales: const [Locale('en')],
+          supportedLocales: AppLocalizations.supportedLocales,
           debugShowCheckedModeBanner: false,
           builder: (context, child) {
             child = WindowController(
@@ -319,6 +346,7 @@ class _AppState extends State<App> {
                       BlocProvider(create: (_) => KyberStatusCubit()),
                       BlocProvider(create: (_) => ModBrowserCubit()),
                       BlocProvider(create: (_) => ServerListCubit()),
+                      BlocProvider(create: (_) => LanServerListCubit()),
                       BlocProvider(create: (_) => ModerationServersCubit()),
                       BlocProvider(create: (_) => ModerationCubit()),
                       BlocProvider(create: (_) => ServerBrowserCubit()),

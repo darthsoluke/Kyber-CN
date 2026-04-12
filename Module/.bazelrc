@@ -1,8 +1,10 @@
 build --cxxopt='/std:c++latest'
 build --cxxopt='/Zc:__cplusplus'
+build --cxxopt=/utf-8
 build --copt=/wd4312 # gRPC warnings about pointer size
 build --copt=/wd4244 # gRPC warnings about pointer size
 build --copt=/wd4141 # Protobuf warnings about repeated 'inline'
+build --copt=/utf-8
 
 common --nolegacy_external_runfiles
 common --experimental_sibling_repository_layout

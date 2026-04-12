@@ -31,5 +31,7 @@ void main() {
         packageRoot.resolve('third_party/unrar.h'),
       ],
     ),
-  ).generate();
+  ).generate(
+    libclangDylib: Uri.file(r'D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\libclang.dll'),
+  );
 }

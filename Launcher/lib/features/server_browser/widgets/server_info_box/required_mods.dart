@@ -62,96 +62,109 @@ class _ServerRequiredModsState extends State<ServerRequiredMods> {
           listenable: sl.get<ModService>(),
           builder: (_, __) => BlocBuilder<DownloadCubit, DownloadState>(
             buildWhen: (previous, current) {
-              final prevDownload = previous is DownloadLoaded ? previous.currentDownload : null;
-              final currDownload = current is DownloadLoaded ? current.currentDownload : null;
+              final prevDownload = previous is DownloadLoaded
+                  ? previous.currentDownload
+                  : null;
+              final currDownload = current is DownloadLoaded
+                  ? current.currentDownload
+                  : null;
               return prevDownload != currDownload;
             },
             builder: (context, state) {
               return ClipRRect(
                 borderRadius: const .vertical(
-                bottom: .circular(kDefaultOuterBorderRadius),
-              ),
-              child: BackgroundBlur(
-                child: Stack(
-                  children: [
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            borderRadius: .vertical(
-                              bottom: .circular(
-                                kDefaultOuterBorderRadius,
-                              ),
-                            ),
-                            border: Border(
-                              bottom: kDefaultBorder,
-                              left: kDefaultBorder,
-                              right: kDefaultBorder,
-                            ),
-                          ),
-                        ),
-                      ),
-                    ),
-                    ClipRRect(
-                      borderRadius: const .vertical(
-                        bottom: .circular(kDefaultOuterBorderRadius + 4),
-                      ),
-                      child: RepaintBoundary(
-                        key: const Key('server_list'),
-                        child: KyberList(
-                          colorOpacity: 0,
-                          shrinkWrap: true,
-                          blur: false,
-                          activeIndex: -1,
-                          itemPadding: .zero,
-                          physics: const ScrollPhysics(),
-                          itemBuilder: (context, index) {
-                            final mod = widget.server.mods[index];
-                            return BlocBuilder<DownloadCubit, DownloadState>(
-                              buildWhen: (previous, current) {
-                                final prevDownload = previous is DownloadLoaded ? previous.currentDownload : null;
-                                final currDownload = current is DownloadLoaded ? current.currentDownload : null;
-                                return prevDownload != currDownload;
-                              },
-                              builder: (context, state) {
-                                final currentDownload = state is DownloadLoaded ? state.currentDownload : null;
-
-                                return RepaintBoundary(
-                                  child: _ModEntry(
-                                    server: widget.server,
-                                    mod: mod,
-                                    activeDownload: currentDownload,
-                                  ),
-                                );
-                              },
-                            );
-                          },
-                          itemCount: widget.server.mods.length,
-                        ),
-                      ),
-                    ),
-                    Positioned.fill(
-                      child: IgnorePointer(
-                        child: Container(
-                          decoration: const BoxDecoration(
-                            borderRadius: .vertical(
-                              bottom: .circular(
-                                kDefaultOuterBorderRadius,
-                              ),
-                            ),
-                            border: Border(bottom: kDefaultBorder),
-                          ),
-                        ),
-                      ),
-                    ),
-                  ],
+                  bottom: .circular(kDefaultOuterBorderRadius),
                 ),
-              ),
-            );
-          },
-        ),
-      );
-    });
+                child: BackgroundBlur(
+                  child: Stack(
+                    children: [
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              borderRadius: .vertical(
+                                bottom: .circular(
+                                  kDefaultOuterBorderRadius,
+                                ),
+                              ),
+                              border: Border(
+                                bottom: kDefaultBorder,
+                                left: kDefaultBorder,
+                                right: kDefaultBorder,
+                              ),
+                            ),
+                          ),
+                        ),
+                      ),
+                      ClipRRect(
+                        borderRadius: const .vertical(
+                          bottom: .circular(kDefaultOuterBorderRadius + 4),
+                        ),
+                        child: RepaintBoundary(
+                          key: const Key('server_list'),
+                          child: KyberList(
+                            colorOpacity: 0,
+                            shrinkWrap: true,
+                            blur: false,
+                            activeIndex: -1,
+                            itemPadding: .zero,
+                            physics: const ScrollPhysics(),
+                            itemBuilder: (context, index) {
+                              final mod = widget.server.mods[index];
+                              return BlocBuilder<DownloadCubit, DownloadState>(
+                                buildWhen: (previous, current) {
+                                  final prevDownload =
+                                      previous is DownloadLoaded
+                                      ? previous.currentDownload
+                                      : null;
+                                  final currDownload = current is DownloadLoaded
+                                      ? current.currentDownload
+                                      : null;
+                                  return prevDownload != currDownload;
+                                },
+                                builder: (context, state) {
+                                  final currentDownload =
+                                      state is DownloadLoaded
+                                      ? state.currentDownload
+                                      : null;
+
+                                  return RepaintBoundary(
+                                    child: _ModEntry(
+                                      server: widget.server,
+                                      mod: mod,
+                                      activeDownload: currentDownload,
+                                    ),
+                                  );
+                                },
+                              );
+                            },
+                            itemCount: widget.server.mods.length,
+                          ),
+                        ),
+                      ),
+                      Positioned.fill(
+                        child: IgnorePointer(
+                          child: Container(
+                            decoration: const BoxDecoration(
+                              borderRadius: .vertical(
+                                bottom: .circular(
+                                  kDefaultOuterBorderRadius,
+                                ),
+                              ),
+                              border: Border(bottom: kDefaultBorder),
+                            ),
+                          ),
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              );
+            },
+          ),
+        );
+      },
+    );
   }
 }
 
@@ -177,7 +190,9 @@ class _ModEntryState extends State<_ModEntry> {
   void initState() {
     if (widget.activeDownload != null) {
       try {
-        currentInstalling = ServerMod.fromJson(widget.activeDownload!.task.metaData);
+        currentInstalling = ServerMod.fromJson(
+          widget.activeDownload!.task.metaData,
+        );
       } catch (e) {}
     }
     super.initState();
@@ -185,24 +200,26 @@ class _ModEntryState extends State<_ModEntry> {
 
   @override
   void didUpdateWidget(covariant _ModEntry oldWidget) {
-    try {
-      if (widget.activeDownload != null) {
-        currentInstalling = ServerMod.fromJson(widget.activeDownload!.task.metaData);
-      } else {
+    if (widget.activeDownload != null) {
+      try {
+        currentInstalling = ServerMod.fromJson(
+          widget.activeDownload!.task.metaData,
+        );
+      } catch (_) {
         currentInstalling = null;
       }
-    } finally {
+    } else {
       currentInstalling = null;
     }
-
-    setState(() => null);
 
     super.didUpdateWidget(oldWidget);
   }
 
   @override
   Widget build(BuildContext context) {
-    final downloading = currentInstalling?.name == widget.mod.name && currentInstalling?.version == widget.mod.version;
+    final downloading =
+        currentInstalling?.name == widget.mod.name &&
+        currentInstalling?.version == widget.mod.version;
 
     final child = ServerModTile(mod: widget.mod, downloading: downloading);
 
@@ -212,7 +229,9 @@ class _ModEntryState extends State<_ModEntry> {
 
     return BlocBuilder<DownloadCubit, DownloadState>(
       builder: (context, state) {
-        final progressUpdate = state is DownloadLoaded ? state.progressUpdate : null;
+        final progressUpdate = state is DownloadLoaded
+            ? state.progressUpdate
+            : null;
 
         return Stack(
           clipBehavior: Clip.none,

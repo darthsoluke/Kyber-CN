@@ -23,14 +23,19 @@ struct MapRotationEntry
 class MapRotation
 {
 public:
-    const MapRotationEntry& GetNextEntry()
+    const MapRotationEntry* GetNextEntry()
     {
+        if (m_entries.empty())
+        {
+            return nullptr;
+        }
+
         if (m_current + 1 > m_entries.size())
         {
             m_current = 0;
         }
 
-        return m_entries[m_current++];
+        return &m_entries[m_current++];
     }
 
     void Reset()
@@ -46,7 +51,7 @@ public:
 
 private:
     std::vector<MapRotationEntry> m_entries;
-    uint16_t m_current;
+    uint16_t m_current = 0;
 };
 
 class KyberSettingsManager

@@ -3,6 +3,7 @@ import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/background_image.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/settings_box_header.dart';
@@ -29,14 +30,18 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
     return FormBuilder(
       key: hostingForm,
       initialValue: {
         'serverName': Preferences.hostServer.name,
         'description': Preferences.hostServer.description,
         'password': Preferences.hostServer.password,
+        'serverPort': Preferences.hostServer.port.toString(),
         'maxPlayers': Preferences.hostServer.maxPlayers,
         'maxSpectators': Preferences.hostServer.maxSpectators,
+        'onlineMode': Preferences.hostServer.onlineMode,
       },
       onChanged: () async {
         final state = context.read<ModerationCubit>().state;
@@ -49,12 +54,22 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
           Preferences.hostServer.password =
               (hostingForm.currentState?.fields['password']?.value ?? '')
                   as String;
+          final parsedPort = int.tryParse(
+            (hostingForm.currentState?.fields['serverPort']?.value ?? '')
+                .toString(),
+          );
+          if (parsedPort != null && parsedPort > 0 && parsedPort <= 65535) {
+            Preferences.hostServer.port = parsedPort;
+          }
           Preferences.hostServer.maxPlayers =
               (hostingForm.currentState?.fields['maxPlayers']?.value ?? 40)
                   as int;
           Preferences.hostServer.maxSpectators =
               (hostingForm.currentState?.fields['maxSpectators']?.value ?? 0)
                   as int;
+          Preferences.hostServer.onlineMode =
+              (hostingForm.currentState?.fields['onlineMode']?.value ?? true)
+                  as bool;
         }
       },
       child: Column(
@@ -98,21 +113,23 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
                             builder: (context, state) {
                               if (state.selected) {
                                 return SuperListView(
-                                  children: const [
+                                  children: [
                                     KyberSectionDropdown(
                                       initialExpanded: true,
-                                      title: 'AUTOPLAYERS',
-                                      child: IngameSettings(),
+                                      title: l10n.text('host.autoplayers'),
+                                      child: const IngameSettings(),
                                     ),
                                     KyberSectionDropdown(
                                       initialExpanded: true,
-                                      title: 'PLAYERS (APPLIES ON SPAWN)',
-                                      child: IngamePlayers(),
+                                      title: l10n.text(
+                                        'host.playersAppliesOnSpawn',
+                                      ),
+                                      child: const IngamePlayers(),
                                     ),
                                     KyberSectionDropdown(
                                       initialExpanded: true,
-                                      title: 'INGAME ACTIONS',
-                                      child: IngameActions(),
+                                      title: l10n.text('host.ingameActions'),
+                                      child: const IngameActions(),
                                     ),
                                   ],
                                 );
@@ -122,14 +139,14 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
                                 return Column(
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
-                                    const Padding(
-                                      padding: EdgeInsets.symmetric(
+                                    Padding(
+                                      padding: const EdgeInsets.symmetric(
                                         horizontal: 12,
                                         vertical: 8,
                                       ),
                                       child: Text(
-                                        'DESCRIPTION',
-                                        style: TextStyle(
+                                        l10n.text('host.description'),
+                                        style: const TextStyle(
                                           fontFamily: FontFamily.battlefrontUI,
                                           fontSize: 16,
                                           color: kInactiveColor,
@@ -144,15 +161,17 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
                                           horizontal: 2,
                                         ),
                                         child: FormBuilderTextField(
-                                          decoration: const mt.InputDecoration(
+                                          decoration: mt.InputDecoration(
                                             contentPadding:
-                                                EdgeInsets.symmetric(
+                                                const EdgeInsets.symmetric(
                                                   horizontal: 10,
                                                   vertical: 14,
                                                 ),
-                                            hintText: 'SERVER DESCRIPTION',
+                                            hintText: l10n.text(
+                                              'host.descriptionPlaceholder',
+                                            ),
                                             border: mt.InputBorder.none,
-                                            hintStyle: TextStyle(
+                                            hintStyle: const TextStyle(
                                               fontFamily:
                                                   FontFamily.battlefrontUI,
                                               fontSize: 16,

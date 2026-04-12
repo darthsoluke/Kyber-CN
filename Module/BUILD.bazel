@@ -17,7 +17,7 @@ grpc_proto_library(
 grpc_proto_library(
     name = "KyberInterfaceProto",
     srcs = ["Proto/kyber_interface.proto"],
-    deps = [":KyberCommonProto", ":KyberAPIProto"],
+    deps = [":KyberCommonProto"],
 )
 
 cc_binary(

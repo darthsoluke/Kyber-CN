@@ -6,6 +6,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/models/maps.dart';
 import 'package:kyber_launcher/features/kyber/models/mode.dart';
 import 'package:kyber_launcher/features/kyber/models/modes.dart';
@@ -233,8 +234,9 @@ class ServerListEntry extends StatelessWidget {
                       alignment: Alignment.center,
                       width: 120,
                       child: Text(
-                        (serverInfo.official ? 'Official' : 'Custom')
-                            .toUpperCase(),
+                        serverInfo.official
+                            ? context.l10n.text('common.official')
+                            : context.l10n.text('common.custom'),
                         textAlign: TextAlign.center,
                       ),
                     ),

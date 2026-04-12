@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/mod_collections/providers/mod_collection_cubit.dart';
 import 'package:kyber_launcher/features/mods/widgets/collection_list/collection_icon.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
@@ -142,15 +143,15 @@ class CreateCollectionEntry extends StatelessWidget {
               Assets.icons.kblCollection.svg(
                 height: 70,
               ),
-              const Padding(
+              Padding(
                 padding: EdgeInsets.all(16),
                 child: Column(
                   mainAxisAlignment: MainAxisAlignment.end,
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      'CREATE NEW COLLECTION',
-                      style: TextStyle(
+                      context.l10n.text('mods.createCollection'),
+                      style: const TextStyle(
                         fontFamily: FontFamily.battlefrontUI,
                         fontSize: 18,
                         color: Colors.white,

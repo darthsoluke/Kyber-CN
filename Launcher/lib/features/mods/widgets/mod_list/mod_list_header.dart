@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:kyber_launcher/shared/ui/elements/header/kyber_header.dart';
 import 'package:kyber_launcher/shared/ui/utils/button_builder.dart';
@@ -18,6 +19,7 @@ class ModListHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Container(
       decoration: const BoxDecoration(
         border: Border.symmetric(
@@ -26,7 +28,7 @@ class ModListHeader extends StatelessWidget {
       ),
       child: KyberHeader(
         headerPadding: EdgeInsets.zero,
-        title: 'MY MODS',
+        title: l10n.text('mods.myMods'),
         customTitle: ButtonBuilder(
           onClick: () => onAllSelected(selectedMods.length < modCount),
           builder: (_, __) => ColoredBox(
@@ -48,26 +50,28 @@ class ModListHeader extends StatelessWidget {
           ),
         ),
         headerLength: 51,
-        sections: const [
-          ExpandedHeaderSection(children: [SizedBox(width: 7.5), Text('NAME')]),
+        sections: [
+          ExpandedHeaderSection(
+            children: [const SizedBox(width: 7.5), Text(l10n.text('common.name'))],
+          ),
           FixedWidthHeaderSection(
             width: 160,
-            children: [Text('CATEGORY')],
+            children: [Text(l10n.text('common.category'))],
             mainAxisAlignment: MainAxisAlignment.center,
           ),
           FixedWidthHeaderSection(
             width: 78,
-            children: [Text('SIZE')],
+            children: [Text(l10n.text('common.size'))],
             mainAxisAlignment: MainAxisAlignment.center,
           ),
           FixedWidthHeaderSection(
             width: 120,
-            children: [Text('TYPE')],
+            children: [Text(l10n.text('common.type'))],
             mainAxisAlignment: MainAxisAlignment.center,
           ),
           FixedWidthHeaderSection(
             width: 57,
-            children: [Text('ADD')],
+            children: [Text(l10n.text('common.add'))],
             mainAxisAlignment: MainAxisAlignment.center,
           ),
         ],

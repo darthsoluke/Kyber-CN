@@ -2,7 +2,6 @@ syntax = "proto3";
 package kyber_interface;
 
 import "Proto/kyber_common.proto";
-import "Proto/kyber_api.proto";
 
 service LauncherCommon {
   rpc Initialize(kyber_common.Empty) returns (InitializeRequest);
@@ -112,6 +111,8 @@ message JoinServerRequest {
   bool spectate = 5;
   // The join token to use when joining the server
   string joinToken = 6;
+  // Optional direct-connect password, primarily used for LAN servers
+  string password = 7;
 }
 
 message VoipDevice {
@@ -146,6 +147,11 @@ message StartServerRequest {
   string description = 4;
   uint32 maxPlayers = 5;
   bool proximityChat = 6;
+  // If set, overrides KYBER_ONLINE_MODE for this server session.
+  // onlineMode=true: register with Kyber + require join tokens.
+  // onlineMode=false: LAN-only (no registration, no join-token auth).
+  optional bool onlineMode = 7;
+  uint32 port = 8;
 }
 
 message LoadLevelRequest {
@@ -170,6 +176,7 @@ message ServerState {
   kyber_common.LevelSetup levelSetup = 2;
   uint32 mapRotationIndex = 3;
   repeated kyber_common.ServerPlayer playerList = 4;
+  uint32 port = 5;
 }
 
 message SetProxyListRequest {

@@ -5,12 +5,14 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/kyber/services/map_helper.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/mods/helper/mod_helper.dart';
 import 'package:kyber_launcher/features/mods/services/mod_service.dart';
 import 'package:kyber_launcher/features/reports/dialogs/report_player_dialog.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_browser_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/server_info_box/background_image.dart';
@@ -75,6 +77,7 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
     final selectedServer =
         context.read<ServerBrowserCubit>().state.selectedServer ??
         widget.server;
+    final isLanServer = LanServerHelper.isLanServer(serverInfo);
     return FutureBuilder(
       future: sl.isReady<ModService>(),
       builder: (context, snapshot) {
@@ -126,7 +129,7 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                     ),
                                   ),
                                 ),
-                                if (!serverInfo.official)
+                                if (!serverInfo.official && !isLanServer)
                                   CustomIconButton(
                                     iconData: mt.Icons.report,
                                     onPressed: () => showKyberDialog(
@@ -144,20 +147,24 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                   iconData: mt.Icons.copy,
                                   size: 18,
                                   onPressed: () {
-                                    final uri = Uri(
-                                      scheme: 'https',
-                                      host: 'api.prod.kyber.gg',
-                                      path: 'redirect',
-                                      queryParameters: {
-                                        'target':
-                                            'join_server?server_id=${serverInfo?.id}',
-                                      },
-                                    );
+                                    final text = isLanServer
+                                        ? '${serverInfo.ip}:${serverInfo.port}'
+                                        : Uri(
+                                            scheme: 'https',
+                                            host: 'api.prod.kyber.gg',
+                                            path: 'redirect',
+                                            queryParameters: {
+                                              'target':
+                                                  'join_server?server_id=${serverInfo.id}',
+                                            },
+                                          ).toString();
                                     Clipboard.setData(
-                                      .new(text: uri.toString()),
+                                      .new(text: text),
                                     );
                                     NotificationService.info(
-                                      message: 'Copied to clipboard!',
+                                      message: context.l10n.text(
+                                        'common.copiedToClipboard',
+                                      ),
                                     );
                                   },
                                 ),
@@ -183,7 +190,9 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                       ClipboardData(text: serverInfo.id),
                                     );
                                     NotificationService.showNotification(
-                                      message: 'Server ID copied to clipboard',
+                                      message: context.l10n.text(
+                                        'serverBrowser.serverIdCopied',
+                                      ),
                                     );
                                   },
                                   child: Row(
@@ -257,9 +266,9 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                     ),
                                   ),
                                 if (serverInfo.official)
-                                  const Text(
-                                    'Official',
-                                    style: TextStyle(
+                                  Text(
+                                    context.l10n.text('common.official'),
+                                    style: const TextStyle(
                                       fontFamily: FontFamily.battlefrontUI,
                                       fontSize: 15,
                                       color: kInactiveColor,
@@ -323,25 +332,27 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                     current.selectedServer ||
                                 previous.joiningServer != current.joiningServer,
                             builder: (context, state) {
-                              final hasRequiredMods = serverInfo.mods
-                                  .map(
-                                    (e) => ModHelper.isInstalled(
-                                      e.name,
-                                      e.version,
-                                    ),
-                                  )
-                                  .every((element) => element);
                               return Stack(
                                 children: [
                                   if (state.joiningServer != serverInfo) ...[
                                     Positioned.fill(
                                       child: ListenableBuilder(
                                         listenable: sl<ModService>(),
-                                        builder: (_, _) => Container(
-                                          color: hasRequiredMods
-                                              ? Colors.green
-                                              : Colors.red,
-                                        ),
+                                        builder: (_, _) {
+                                          final hasRequiredMods = serverInfo
+                                              .mods
+                                              .every(
+                                                (e) => ModHelper.isInstalled(
+                                                  e.name,
+                                                  e.version,
+                                                ),
+                                              );
+                                          return Container(
+                                            color: hasRequiredMods
+                                                ? Colors.green
+                                                : Colors.red,
+                                          );
+                                        },
                                       ),
                                     ),
                                   ] else ...[
@@ -602,11 +613,15 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                                                     .levelSetup
                                                                     .modeName
                                                               : MapHelper.getMode(
-                                                                      serverInfo
-                                                                          .levelSetup
-                                                                          .mode,
-                                                                    )?.name ??
-                                                                    'UNKNOWN MODE',
+                                                                          serverInfo
+                                                                              .levelSetup
+                                                                              .mode,
+                                                                        )
+                                                                        ?.name ??
+                                                                    context.l10n
+                                                                        .text(
+                                                                          'join.unknownMode',
+                                                                        ),
                                                         ),
                                                         const TextSpan(
                                                           text: ' | ',
@@ -624,14 +639,18 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                                                     .levelSetup
                                                                     .mapName
                                                               : MapHelper.getMap(
-                                                                      serverInfo
-                                                                          .levelSetup
-                                                                          .mode,
-                                                                      serverInfo
-                                                                          .levelSetup
-                                                                          .map,
-                                                                    )?.name ??
-                                                                    'UNKNOWN MAP',
+                                                                          serverInfo
+                                                                              .levelSetup
+                                                                              .mode,
+                                                                          serverInfo
+                                                                              .levelSetup
+                                                                              .map,
+                                                                        )
+                                                                        ?.name ??
+                                                                    context.l10n
+                                                                        .text(
+                                                                          'join.unknownMap',
+                                                                        ),
                                                         ),
                                                       ],
                                                     ),

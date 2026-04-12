@@ -5,6 +5,7 @@ import 'package:flutter/services.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_browser_cubit.dart';
@@ -299,7 +300,7 @@ class _LoadingIndicator extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return const Center(
+    return Center(
       child: Row(
         mainAxisAlignment: MainAxisAlignment.center,
         spacing: 15,
@@ -310,7 +311,7 @@ class _LoadingIndicator extends StatelessWidget {
             child: ProgressRing(),
           ),
           Text(
-            'LOADING MODS...',
+            context.l10n.text('mods.loading'),
             style: TextStyle(fontFamily: FontFamily.battlefrontUI),
           ),
         ],
@@ -401,20 +402,20 @@ class _CollectionsHeader extends StatelessWidget {
     return Container(
       height: 61,
       padding: const EdgeInsets.all(13),
-      child: const Column(
+      child: Column(
         crossAxisAlignment: CrossAxisAlignment.start,
         children: [
           Text(
-            'COLLECTIONS',
-            style: TextStyle(
+            context.l10n.text('mods.collections.title'),
+            style: const TextStyle(
               fontFamily: FontFamily.battlefrontUI,
               fontSize: 21,
               height: 1,
             ),
           ),
           Text(
-            'MANAGE MOD COLLECTIONS & CURATE COSMETIC MODS',
-            style: TextStyle(
+            context.l10n.text('mods.collections.description'),
+            style: const TextStyle(
               fontFamily: FontFamily.battlefrontUI,
               fontSize: 14,
               color: kWhiteColor,
@@ -540,8 +541,8 @@ class _TabSelector extends StatelessWidget {
           onPageChanged(value);
         },
         tabs: [
-          Text('Mods'.toUpperCase()),
-          Text('Browser'.toUpperCase()),
+          Text(context.l10n.text('common.mods')),
+          Text(context.l10n.text('common.browser')),
         ],
       ),
     );
@@ -737,7 +738,7 @@ class _ModsFilterDropdown extends StatelessWidget {
           return SuperListView(
             children: [
               KyberFilterSection<ModScope>(
-                title: 'MOD SCOPE',
+                title: context.l10n.text('mods.scope'),
                 selectedItems: [state.filter.scope],
                 items: toSelectorItems(
                   ModScope.values,

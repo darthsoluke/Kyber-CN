@@ -1,6 +1,8 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber/kyber.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
+import 'package:kyber_launcher/features/mods/helper/mod_helper.dart';
 import 'package:kyber_launcher/features/mods/services/mod_service.dart';
 import 'package:kyber_launcher/features/server_browser/helpers/server_browser_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
@@ -28,6 +30,7 @@ class ServerButtonRow extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     final server =
         this.server ??
         (context.read<ServerBrowserCubit>().state.selectedServer! is ServerGroup
@@ -46,8 +49,11 @@ class ServerButtonRow extends StatelessWidget {
         ListenableBuilder(
           listenable: sl.get<ModService>(),
           builder: (_, __) {
+            final installed = server.mods.every(
+              (m) => ModHelper.isInstalled(m.name, m.version),
+            );
             var disabled = false;
-            if (onServerSelected == null && !hasModsInstalled) {
+            if (onServerSelected == null && !installed) {
               disabled = !ServerBrowserHelper.canJoinServer(
                 context,
                 server: server,
@@ -56,16 +62,18 @@ class ServerButtonRow extends StatelessWidget {
             }
 
             return KyberButton(
-              onPressed: onServerSelected ?? (!disabled ?
-                        () async {
+              onPressed:
+                  onServerSelected ??
+                  (!disabled
+                      ? () async {
                           context.read<ServerBrowserCubit>().joinServer();
                         }
-                  : null),
+                      : null),
               text: onServerSelected != null
-                  ? 'MODERATE'
-                  : hasModsInstalled
-                  ? 'Play Now'
-                  : 'Download Mods',
+                  ? l10n.text('host.moderate')
+                  : installed
+                  ? l10n.text('serverBrowser.playNow')
+                  : l10n.text('serverBrowser.downloadMods'),
             );
           },
         ),
@@ -77,11 +85,12 @@ class ServerButtonRow extends StatelessWidget {
             width: 200,
             child: KyberTabBar(
               tabs: [
-                const Text('MODS'),
-                if (server.description.isNotEmpty) const Text('INFO'),
+                Text(l10n.text('common.mods')),
+                if (server.description.isNotEmpty)
+                  Text(l10n.text('common.info')),
                 if (context.read<ServerBrowserCubit>().state.selectedServer
                     is ServerGroup)
-                  const Text('SERVERS'),
+                  Text(l10n.text('serverBrowser.tab.servers')),
               ],
               onChanged: onPageChanged ?? (index) {},
               selectedIndex: selectedIndex,

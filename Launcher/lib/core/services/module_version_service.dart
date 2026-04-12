@@ -1,6 +1,7 @@
 import 'dart:io';
 
 import 'package:collection/collection.dart';
+import 'package:ffi/ffi.dart';
 import 'package:flutter/foundation.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_collection/kyber_collection.dart';
@@ -75,6 +76,7 @@ extension VersionModuleExtension on VersionModule {
           '$modulePath/vivoxsdk.dll',
           '$modulePath/VanillaBundleAggregation.kb',
           '$modulePath/Kyber.dll',
+          '$modulePath/ca_root.pem',
         ];
     }
   }
@@ -91,6 +93,162 @@ extension VersionModuleExtension on VersionModule {
 
 class ModuleVersionService {
   final _logger = Logger('version_service');
+
+  Directory get _bundledModuleDirectory =>
+      Directory(join(dirname(Platform.resolvedExecutable), 'module'));
+  File get _bundledModuleArchive =>
+      File(join(_bundledModuleDirectory.path, 'kyber-module.zip'));
+
+  void _tryClearReadOnly(String fileOrDirPath) {
+    if (!Platform.isWindows) {
+      return;
+    }
+
+    final pathPtr = fileOrDirPath.toNativeUtf16();
+    try {
+      final attrs = GetFileAttributes(pathPtr);
+      // INVALID_FILE_ATTRIBUTES (0xFFFFFFFF)
+      if (attrs == 0xFFFFFFFF) {
+        return;
+      }
+
+      if ((attrs & FILE_ATTRIBUTE_READONLY) != 0) {
+        SetFileAttributes(pathPtr, attrs & ~FILE_ATTRIBUTE_READONLY);
+      }
+    } catch (_) {
+      // Best-effort only.
+    } finally {
+      calloc.free(pathPtr);
+    }
+  }
+
+  void _prepareModuleDirectoryForOverwrite(
+    String modulePath, {
+    required bool includeModFiles,
+  }) {
+    _tryClearReadOnly(modulePath);
+    for (final name in [
+      'Kyber.dll',
+      'vivoxsdk.dll',
+      'ca_root.pem',
+      if (includeModFiles) 'VanillaBundleAggregation.kb',
+      'VERSION',
+      'kyber-module.zip',
+    ]) {
+      final path = join(modulePath, name);
+      if (File(path).existsSync()) {
+        _tryClearReadOnly(path);
+      }
+    }
+  }
+
+  bool _hasModuleFiles(
+    String modulePath, {
+    bool requireModSupport = true,
+  }) {
+    final required = <String>[
+      join(modulePath, 'Kyber.dll'),
+      join(modulePath, 'vivoxsdk.dll'),
+      join(modulePath, 'ca_root.pem'),
+      if (requireModSupport) join(modulePath, 'VanillaBundleAggregation.kb'),
+    ];
+
+    return required.every((path) => File(path).existsSync());
+  }
+
+  bool hasBundledModule({bool requireModSupport = true}) {
+    return _hasModuleFiles(
+          _bundledModuleDirectory.path,
+          requireModSupport: requireModSupport,
+        ) ||
+        _bundledModuleArchive.existsSync();
+  }
+
+  Future<bool> installBundledModuleIfAvailable({
+    bool requireModSupport = true,
+  }) async {
+    final sourceDir = _bundledModuleDirectory;
+    if (!sourceDir.existsSync()) {
+      return false;
+    }
+
+    if (_hasModuleFiles(sourceDir.path, requireModSupport: requireModSupport)) {
+      return true;
+    }
+
+    if (!_bundledModuleArchive.existsSync()) {
+      return false;
+    }
+
+    _prepareModuleDirectoryForOverwrite(
+      sourceDir.path,
+      includeModFiles: requireModSupport,
+    );
+    await extract(
+      filePath: _bundledModuleArchive.path,
+      targetDir: sourceDir.path,
+    );
+    _prepareModuleDirectoryForOverwrite(
+      sourceDir.path,
+      includeModFiles: requireModSupport,
+    );
+
+    final prepared = _hasModuleFiles(
+      sourceDir.path,
+      requireModSupport: requireModSupport,
+    );
+    if (prepared) {
+      _logger.info('Prepared bundled module in ${sourceDir.path}');
+    }
+
+    return prepared;
+  }
+
+  bool hasLaunchableModule({bool requireModSupport = true}) {
+    return _hasModuleFiles(
+      FileHelper.getModuleDirectory().path,
+      requireModSupport: requireModSupport,
+    );
+  }
+
+  Future<String> getLaunchModuleDirectory({
+    bool requireModSupport = true,
+  }) async {
+    if (await installBundledModuleIfAvailable(
+      requireModSupport: requireModSupport,
+    )) {
+      return _bundledModuleDirectory.path;
+    }
+
+    return FileHelper.getModuleDirectory().path;
+  }
+
+  Future<String> getRuntimeVersion({
+    VersionModule module = VersionModule.module,
+    String? moduleDirectory,
+  }) async {
+    if (module == VersionModule.module && moduleDirectory != null) {
+      final versionFile = File(join(moduleDirectory, 'VERSION'));
+      if (versionFile.existsSync()) {
+        final bundledVersion = versionFile.readAsStringSync().trim();
+        if (bundledVersion.isNotEmpty) {
+          return bundledVersion;
+        }
+      }
+    }
+
+    final currentVersion = await module.getCurrentVersion();
+    if (currentVersion != null && currentVersion.isNotEmpty) {
+      return currentVersion;
+    }
+
+    final cachedVersion = box.get(module.name) as String?;
+    if (cachedVersion != null && cachedVersion.isNotEmpty) {
+      return cachedVersion;
+    }
+
+    return 'local';
+  }
 
   bool isStandalone() {
     // TODO: find a fix for this
@@ -251,8 +409,15 @@ class ModuleVersionService {
       ),
     );
     final filename = basename(download.url).split('?').first;
-    final downloadDir = await module.getDownloadDir();
+    final downloadDir = module == VersionModule.module
+        ? await getLaunchModuleDirectory(requireModSupport: true)
+        : await module.getDownloadDir();
     final downloadPath = join(downloadDir, filename);
+    final downloadDirectory = Directory(downloadDir);
+
+    if (!downloadDirectory.existsSync()) {
+      downloadDirectory.createSync(recursive: true);
+    }
 
     _logger.fine('Downloading to $downloadPath');
 
@@ -274,15 +439,19 @@ class ModuleVersionService {
       raf.closeSync();
     }
 
-    if (!Directory(downloadDir).existsSync()) {
-      Directory(downloadDir).createSync();
-    }
-
     _logger.fine('Extracting artifact...');
 
+    if (module == VersionModule.module) {
+      _prepareModuleDirectoryForOverwrite(downloadDir, includeModFiles: true);
+    }
     await extract(filePath: downloadPath, targetDir: downloadDir);
+    if (module == VersionModule.module) {
+      _prepareModuleDirectoryForOverwrite(downloadDir, includeModFiles: true);
+    }
 
-    File(downloadPath).deleteSync();
+    try {
+      File(downloadPath).deleteSync();
+    } catch (_) {}
 
     await box.put(module.name, latestVersion.version);
     if (module == VersionModule.installer) {
@@ -296,9 +465,9 @@ class ModuleVersionService {
       exit(0);
     } else {
       if (module == VersionModule.module) {
-        File(
-          join(FileHelper.getModuleDirectory().path, 'VERSION'),
-        ).writeAsStringSync(latestVersion.version);
+        File(join(downloadDir, 'VERSION')).writeAsStringSync(
+          latestVersion.version,
+        );
       }
     }
 

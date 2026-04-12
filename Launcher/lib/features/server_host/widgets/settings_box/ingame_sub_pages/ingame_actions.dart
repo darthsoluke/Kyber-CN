@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/map_rotation/models/map_rotation_entry.dart';
 import 'package:kyber_launcher/features/server_browser/dialogs/load_map_dialog.dart';
 import 'package:kyber_launcher/features/server_host/dialogs/not_enough_players_dialog.dart';
@@ -16,8 +17,8 @@ class IngameActions extends StatelessWidget {
       itemStyle: const TextStyle(fontSize: 17),
       items: [
         KyberTableItem.button(
-          title: 'START GAME',
-          text: 'START',
+          title: context.l10n.text('host.ingame.startGame'),
+          text: context.l10n.text('common.start'),
           onClick: () async {
             final cubit = context.read<ModerationCubit>();
             if (cubit.state.players.length < 2) {
@@ -34,15 +35,15 @@ class IngameActions extends StatelessWidget {
           },
         ),
         KyberTableItem.button(
-          title: 'SKIP MAP',
-          text: 'SKIP',
+          title: context.l10n.text('host.ingame.skipMap'),
+          text: context.l10n.text('common.skip'),
           onClick: () {
             context.read<ModerationCubit>().sendCommand('/Kyber.restart');
           },
         ),
         KyberTableItem.button(
-          title: 'CHANGE MAP',
-          text: 'CHANGE',
+          title: context.l10n.text('host.ingame.changeMap'),
+          text: context.l10n.text('common.change'),
           onClick: () async {
             final result = await showKyberDialog<MapRotationEntry>(
               context: context,
@@ -62,8 +63,8 @@ class IngameActions extends StatelessWidget {
           },
         ),
         KyberTableItem.button(
-          title: 'Pause Timer',
-          text: 'PAUSE',
+          title: context.l10n.text('host.ingame.pauseTimer'),
+          text: context.l10n.text('common.pause'),
           onClick: () {
             context.read<ModerationCubit>().sendCommand('/Kyber.ToggleTimer');
           },

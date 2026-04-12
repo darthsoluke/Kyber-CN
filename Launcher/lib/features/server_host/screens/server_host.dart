@@ -2,6 +2,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_status_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/server_info_box/server_info_box.dart';
 import 'package:kyber_launcher/features/server_host/providers/host_search_cubit.dart';
@@ -46,6 +47,7 @@ class _ServerHostState extends State<ServerHost> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return BlocListener<KyberStatusCubit, KyberStatusState>(
       listenWhen: (previous, current) =>
           previous is! KyberStatusHosting && current is KyberStatusHosting ||
@@ -79,7 +81,7 @@ class _ServerHostState extends State<ServerHost> {
                       if (!createServer && !state.selected) ...[
                         KyberButton(
                           icon: const Icon(mt.Icons.add),
-                          text: 'NEW',
+                          text: l10n.text('common.new'),
                           onPressed: () {
                             setState(() => createServer = true);
                           },
@@ -118,9 +120,9 @@ class _ServerHostState extends State<ServerHost> {
                         SizedBox(
                           width: 250,
                           child: KyberTabBar(
-                            tabs: const [
-                              Text('MODERATE'),
-                              Text('MANAGE'),
+                            tabs: [
+                              Text(l10n.text('host.moderate')),
+                              Text(l10n.text('host.manage')),
                             ],
                             onChanged: (selectedIndex) {
                               context.read<HostSearchCubit>().clear();
@@ -137,9 +139,9 @@ class _ServerHostState extends State<ServerHost> {
                         SizedBox(
                           width: 250,
                           child: KyberTabBar(
-                            tabs: const [
-                              Text('ROTATION'),
-                              Text('MODS'),
+                            tabs: [
+                              Text(l10n.text('host.rotation')),
+                              Text(l10n.text('common.mods')),
                             ],
                             onChanged: (selectedIndex) {
                               context.read<HostSearchCubit>().clear();
@@ -166,7 +168,7 @@ class _ServerHostState extends State<ServerHost> {
                       ],
                       Expanded(
                         child: KyberInput(
-                          placeholder: 'Search ...',
+                          placeholder: l10n.text('host.searchPlaceholder'),
                           controller: searchController,
                           onChanged: context
                               .read<HostSearchCubit>()

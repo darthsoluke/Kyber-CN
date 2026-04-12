@@ -22,6 +22,10 @@ Client::Client()
     , m_voipManager(nullptr)
     , m_socketManager(nullptr)
     , m_eventManager(new EventManager())
+    , m_serverPort(25200)
+    , m_hasPendingJoin(false)
+    , m_pendingJoinSpectate(false)
+    , m_pendingJoinProxied(false)
     , m_clientState(ClientState_None)
 {
     m_eventManager->RegisterListener<MainLoopInitJoinServerEvent>(this);
@@ -75,9 +79,43 @@ void Client::AttemptJoinVoip()
         });
 }
 
-void Client::JoinServer(const std::string& id, std::string ip, uint16_t port, bool spectate, bool proxied, bool changeState)
+static bool IsLanServerId(const std::string& id)
 {
-    if (!id.empty())
+    return id.rfind("lan:", 0) == 0;
+}
+
+void Client::QueueInitialJoin(
+    const std::string& id,
+    const std::string& ip,
+    uint16_t port,
+    const std::string& password,
+    bool spectate,
+    bool proxied)
+{
+    m_currentServerId = id;
+    m_serverIp = ip;
+    m_serverPort = port;
+    m_serverPassword = password;
+    m_pendingJoinSpectate = spectate;
+    m_pendingJoinProxied = proxied;
+    m_hasPendingJoin = true;
+}
+
+void Client::ProcessPendingJoin()
+{
+    if (!m_hasPendingJoin)
+    {
+        return;
+    }
+
+    m_hasPendingJoin = false;
+    JoinServer(m_currentServerId, m_serverIp, m_serverPort, m_serverPassword, m_pendingJoinSpectate, m_pendingJoinProxied, false);
+}
+
+void Client::JoinServer(
+    const std::string& id, std::string ip, uint16_t port, const std::string& password, bool spectate, bool proxied, bool changeState)
+{
+    if (!id.empty() && !IsLanServerId(id))
     {
         auto server = g_program->GetAPI()->GetServerBrowser()->GetServer(id);
         if (!server)
@@ -106,8 +144,13 @@ void Client::JoinServer(const std::string& id, std::string ip, uint16_t port, bo
     ClientSettings* clientSettings = Settings<ClientSettings>("Client");
     clientSettings->ServerIp = StringUtils::CopyWithArena(ip);
 
-    SocketSpawnInfo info(proxied, proxied ? ip : "", id, "");
+    const std::string socketServerName = IsLanServerId(id) ? "" : id;
+    SocketSpawnInfo info(proxied, proxied ? ip : "", socketServerName, "");
     g_program->m_server->m_socketSpawnInfo = info;
+    m_currentServerId = id;
+    m_serverIp = ip;
+    m_serverPort = port;
+    m_serverPassword = password;
     m_joining = true;
     m_spectator = spectate;
 
@@ -176,6 +219,13 @@ __int64 ClientStateChangeHk(__int64 inst, ClientState currentClientState, Client
         }
 
         g_program->m_client->m_connected = false;
+        if (!g_program->m_client->m_joining)
+        {
+            g_program->m_client->m_currentServerId.clear();
+            g_program->m_client->m_serverIp.clear();
+            g_program->m_client->m_serverPort = 25200;
+            g_program->m_client->m_serverPassword.clear();
+        }
 
         if (server->m_runningHosted)
         {
@@ -208,6 +258,24 @@ __int64 ClientStateChangeHk(__int64 inst, ClientState currentClientState, Client
         server->OnClientStartup();
 
         firstStartup = false;
+    }
+    else if (currentClientState == ClientState_ConnectToServer)
+    {
+        if (!g_program->m_client->m_serverIp.empty() && g_program->m_client->m_serverPort > 0)
+        {
+            if (ClientSettings* clientSettings = Settings<ClientSettings>("Client"))
+            {
+                clientSettings->ServerIp = StringUtils::CopyWithArena(g_program->m_client->m_serverIp);
+            }
+
+            if (NetworkSettings* networkSettings = Settings<NetworkSettings>("Network"))
+            {
+                networkSettings->ServerPort = g_program->m_client->m_serverPort;
+            }
+
+            KYBER_LOG(Info, "[Client] Re-applying join target " << g_program->m_client->m_serverIp << ":"
+                                                                << g_program->m_client->m_serverPort);
+        }
     }
     else if (currentClientState == ClientState_Ingame)
     {
@@ -294,15 +362,29 @@ void ClientConnectToAddressHk(__int64 inst, const char* ipAddress, const char* s
 {
     static const auto trampoline = HookManager::Call(ClientConnectToAddressHk);
     SocketSpawnInfo info = g_program->m_server->m_socketSpawnInfo;
+    const char* connectPassword = serverPassword;
+    const char* connectAddress = ipAddress;
+    if (g_program->m_client->m_joining && !g_program->m_client->m_serverPassword.empty())
+    {
+        connectPassword = StringUtils::CopyWithArena(g_program->m_client->m_serverPassword);
+    }
+
+    std::string customConnectAddress;
+    if (!g_program->m_client->m_serverIp.empty() && g_program->m_client->m_serverPort > 0)
+    {
+        customConnectAddress = g_program->m_client->m_serverIp + ":" + std::to_string(g_program->m_client->m_serverPort);
+        connectAddress = customConnectAddress.c_str();
+    }
+
     if (false && g_program->m_client->m_joining && info.isProxied)
     {
         KYBER_LOG(Info, "[Client] Connecting to server (proxied)");
-        trampoline(inst, (std::string(info.proxyAddress) + ":25201").c_str(), serverPassword);
+        trampoline(inst, (std::string(info.proxyAddress) + ":25201").c_str(), connectPassword);
     }
     else
     {
-        KYBER_LOG(Info, "[Client] Connecting to server " << ipAddress);
-        trampoline(inst, ipAddress, serverPassword);
+        KYBER_LOG(Info, "[Client] Connecting to server " << connectAddress);
+        trampoline(inst, connectAddress, connectPassword);
     }
 
     if (g_program->m_client->m_joining)
@@ -397,7 +479,7 @@ void Client::OnEvent(const Event& event)
     if (event.is<MainLoopInitJoinServerEvent>())
     {
         const auto& e = event.as<MainLoopInitJoinServerEvent>();
-        JoinServer(e.id, e.ip, e.port, e.spectate, e.proxied, false);
+        QueueInitialJoin(e.id, e.ip, e.port, e.password, e.spectate, e.proxied);
     }
 }
 

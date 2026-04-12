@@ -3,6 +3,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_fadein/flutter_fadein.dart';
 import 'package:kyber/kyber.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/models/maps.dart';
 import 'package:kyber_launcher/features/kyber/models/mode.dart';
 import 'package:kyber_launcher/features/kyber/models/modes.dart';
@@ -53,7 +54,7 @@ class _TableServerListState extends State<TableServerList> {
                   if (servers.isEmpty && !tutorialActive) {
                     return Center(
                       child: Text(
-                        'No servers found',
+                        context.l10n.text('common.noServersFound'),
                         style: FluentTheme.of(context).typography.subtitle
                             ?.copyWith(
                               fontFamily: FontFamily.battlefrontUI,

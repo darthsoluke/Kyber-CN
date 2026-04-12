@@ -239,6 +239,15 @@ class HostServer {
 
   set maxSpectators(int value) => box.put('hostMaxSpectators', value);
 
+  int get port => box.get('hostPort', defaultValue: 25200) as int? ?? 25200;
+
+  set port(int value) => box.put('hostPort', value);
+
+  bool get onlineMode =>
+      box.get('hostOnlineMode', defaultValue: true) as bool? ?? true;
+
+  set onlineMode(bool value) => box.put('hostOnlineMode', value);
+
   String? get collection => box.get('hostingCollection') as String?;
 
   set collection(String? value) => box.put('hostingCollection', value);

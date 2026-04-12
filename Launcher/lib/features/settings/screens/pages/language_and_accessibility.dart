@@ -1,6 +1,9 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/config/locales.dart';
+import 'package:kyber_launcher/core/i18n/app_locale.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_proxy_cubit.dart';
@@ -19,20 +22,45 @@ class LanguageAndAccessibility extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
+
     return SuperListView(
       padding: const EdgeInsets.only(bottom: 15),
       children: [
-        const Row(
+        Row(
           children: [
-            SettingsHeader(title: 'ACCESSIBILITY'),
+            SettingsHeader(title: l10n.text('settings.accessibility.header')),
           ],
         ),
         const CardSection(),
         const SizedBox(height: 15),
-        const Padding(
+        KyberTable(
+          items: [
+            KyberTableItem<Locale>.selector(
+              title: l10n.text('settings.displayLanguage'),
+              items: Locales.supportedLanguages
+                  .map(
+                    (locale) => KyberSelectorItem<Locale>(
+                      title: Locales.nativeName(locale),
+                      value: locale,
+                    ),
+                  )
+                  .toList(),
+              value: AppLocale.getLocale(),
+              onChange: (locale) async {
+                if (locale == null) {
+                  return;
+                }
+                await AppLocale.setLocale(locale);
+              },
+            ),
+          ],
+        ),
+        const SizedBox(height: 15),
+        Padding(
           padding: EdgeInsets.symmetric(horizontal: 21),
           child: Text(
-            'COLORBLIND PROFILES',
+            l10n.text('settings.colorblindProfiles'),
             style: TextStyle(
               color: kWhiteColor,
               fontFamily: FontFamily.battlefrontUI,
@@ -50,19 +78,19 @@ class LanguageAndAccessibility extends StatelessWidget {
               spacing: 30,
               children: [
                 _ColorOption(
-                  title: 'DEFAULT',
+                  title: l10n.text('settings.color.default'),
                   color: kDefaultActiveColor.withValues(),
                 ),
                 _ColorOption(
-                  title: 'PROTANOMALY',
+                  title: l10n.text('settings.color.protanomaly'),
                   color: kProtanopia.withValues(),
                 ),
                 _ColorOption(
-                  title: 'DEUTERANOMALY',
+                  title: l10n.text('settings.color.deuteranomaly'),
                   color: kDeuteranopia.withValues(),
                 ),
                 _ColorOption(
-                  title: 'TRITANOMALY',
+                  title: l10n.text('settings.color.tritanomaly'),
                   color: kTritanopia.withValues(),
                 ),
               ],
@@ -79,15 +107,15 @@ class LanguageAndAccessibility extends StatelessWidget {
                 return KyberTable(
                   items: [
                     KyberTableItem.button(
-                      title: 'RESET SETTINGS',
+                      title: l10n.text('settings.resetSettings'),
                       onClick: () => showKyberDialog(
                         context: context,
                         builder: (_) => const SettingsResetDialog(),
                       ),
-                      text: 'Reset',
+                      text: l10n.text('common.reset'),
                     ),
                     KyberTableItem.switchButton(
-                      title: 'Remember Window Position',
+                      title: l10n.text('settings.rememberWindowPosition'),
                       value: Preferences.customization.rememberWindowPosition,
                       onChange: (value) async {
                         Preferences.customization.rememberWindowPosition =
@@ -109,7 +137,7 @@ class LanguageAndAccessibility extends StatelessWidget {
             spacing: 15,
             children: [
               Text(
-                'CUSTOMIZATION',
+                l10n.text('settings.customization.header'),
                 style: FluentTheme.of(context).typography.title!.copyWith(
                   fontWeight: FontWeight.bold,
                   color: kInactiveColor,
@@ -128,7 +156,7 @@ class LanguageAndAccessibility extends StatelessWidget {
                     ),
                   ),
                   child: Text(
-                    'PATREON EXCLUSIVE',
+                    l10n.text('settings.patreonExclusive'),
                     style: TextStyle(
                       fontFamily: FontFamily.battlefrontUI,
                       color: kActiveColor,
@@ -155,8 +183,8 @@ class LanguageAndAccessibility extends StatelessWidget {
           builder: (_) => KyberTable(
             items: [
               KyberTableItem.button(
-                title: 'CHANGE HIGHLIGHT COLOR',
-                text: 'Change',
+                title: l10n.text('settings.changeHighlightColor'),
+                text: l10n.text('common.change'),
                 onClick: !context.read<MaximaCubit>().state.canUsePerks()
                     ? null
                     : () async {
@@ -167,7 +195,7 @@ class LanguageAndAccessibility extends StatelessWidget {
                               maxWidth: 700,
                               maxHeight: 600,
                             ),
-                            title: const Text('CHANGE COLOR'),
+                            title: Text(l10n.text('settings.changeColor')),
                             content: SingleChildScrollView(
                               child: ColorPicker(
                                 isAlphaEnabled: false,
@@ -183,11 +211,11 @@ class LanguageAndAccessibility extends StatelessWidget {
                             ),
                             actions: <Widget>[
                               KyberButton(
-                                text: 'CANCEL',
+                                text: l10n.text('common.cancel'),
                                 onPressed: () => Navigator.of(context).pop(),
                               ),
                               KyberButton(
-                                text: 'Reset',
+                                text: l10n.text('common.reset'),
                                 onPressed: () {
                                   kActiveColor = const Color(0xFFfab20a);
                                   Preferences.customization.activeColor =
@@ -196,7 +224,7 @@ class LanguageAndAccessibility extends StatelessWidget {
                                 },
                               ),
                               KyberButton(
-                                text: 'Save',
+                                text: l10n.text('common.save'),
                                 onPressed: () {
                                   Navigator.of(context).pop();
                                 },
@@ -207,8 +235,8 @@ class LanguageAndAccessibility extends StatelessWidget {
                       },
               ),
               KyberTableItem.button(
-                title: 'CHANGE BACKGROUND',
-                text: 'Change',
+                title: l10n.text('settings.changeBackground'),
+                text: l10n.text('common.change'),
                 onClick: !context.read<MaximaCubit>().state.canUsePerks()
                     ? null
                     : () {

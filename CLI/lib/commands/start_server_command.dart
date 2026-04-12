@@ -39,6 +39,11 @@ class StartServerCommand extends Command<int> {
       ..addOption('server-password', abbr: 'p', help: 'Specify the server name')
       ..addOption('server-description', help: 'Specify the server description')
       ..addOption(
+        'server-port',
+        defaultsTo: '25200',
+        help: 'Specify the server listen port',
+      )
+      ..addOption(
         'max-players',
         defaultsTo: '40',
         help: 'Specify the maximum number of players',
@@ -113,7 +118,8 @@ class StartServerCommand extends Command<int> {
 
   @override
   Future<int> run() async {
-    final allowDedicated = Platform.environment['KYBER_BYPASS_DOCKER_I_REALLY_KNOW_WHAT_I_AM_DOING'];
+    final allowDedicated = Platform
+        .environment['KYBER_BYPASS_DOCKER_I_REALLY_KNOW_WHAT_I_AM_DOING'];
     if (allowDedicated == null || allowDedicated.isEmpty) {
       _logger.info(
         'To host dedicated servers, please use our Docker image. For more information, visit https://docs.kyber.gg',
@@ -276,9 +282,10 @@ class StartServerCommand extends Command<int> {
       Env.set('MAXIMA_DENUVO_TOKEN', existingToken);
     }
 
-    Env.delete('KYBER_HIDE_CONSOLE');
-    final showConsole = argResults?['show-console'] as bool?;
-    if (showConsole != null && showConsole) {
+    final showConsole = argResults?['show-console'] as bool? ?? false;
+    if (showConsole) {
+      Env.delete('KYBER_HIDE_CONSOLE');
+    } else {
       Env.set('KYBER_HIDE_CONSOLE', '1');
     }
 
@@ -375,6 +382,20 @@ class StartServerCommand extends Command<int> {
       );
     }
 
+    final modLoaderOverride = Platform.environment['KYBER_DISABLE_MODLOADER'];
+    if (modLoaderOverride != null && modLoaderOverride.isNotEmpty) {
+      _logger.info(
+        'KYBER_DISABLE_MODLOADER is set, leaving mod loader disabled',
+      );
+    } else if (gameplayMods.isEmpty) {
+      Env.set('KYBER_DISABLE_MODLOADER', '1');
+      _logger.info(
+        'No gameplay mods configured; disabling mod loader for dedicated startup',
+      );
+    } else {
+      Env.delete('KYBER_DISABLE_MODLOADER');
+    }
+
     final modEntries = <String, ModEntry>{};
     for (final mod in gameplayMods.where(
       (element) =>
@@ -435,6 +456,27 @@ class StartServerCommand extends Command<int> {
     final maxPlayers = argResults?['max-players'] != null
         ? int.tryParse(argResults!['max-players'] as String) ?? 40
         : 40;
+    final serverPort =
+        int.tryParse(
+          (Platform.environment['KYBER_SERVER_PORT'] ??
+                      argResults?['server-port'])
+                  as String? ??
+              '',
+        ) ??
+        25200;
+    if (serverPort <= 0 || serverPort > 65535) {
+      _logger.err('server-port must be between 1 and 65535');
+      return ExitCode.usage.code;
+    }
+
+    final onlineMode =
+        (Platform.environment['KYBER_ONLINE_MODE'] ?? '1') != '0';
+    if (onlineMode && serverPort != 25200) {
+      _logger.warn(
+        'Custom server ports are only fully supported in offline/direct-connect mode. Kyber online registration still assumes port 25200.',
+      );
+    }
+
     server.setInitializeRequest(
       InitializeRequest(
         modData: modData,
@@ -465,6 +507,7 @@ class StartServerCommand extends Command<int> {
                 Platform.environment['KYBER_SERVER_MAX_PLAYERS'] ?? '',
               ) ??
               maxPlayers,
+          port: serverPort,
           name: serverName,
         ),
       ),
@@ -655,7 +698,9 @@ class StartServerCommand extends Command<int> {
     }
 
     try {
-      final data = metaData.split(',').map((e) => MapEntry(e.split('=').first, e.split('=').last));
+      final data = metaData
+          .split(',')
+          .map((e) => MapEntry(e.split('=').first, e.split('=').last));
       final map = Map<String, String>.fromEntries(data);
 
       return map['pinned_proxy_id'] ?? 'unknown';

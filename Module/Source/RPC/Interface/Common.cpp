@@ -28,6 +28,10 @@ ServerUnaryReactor* CommonInterfaceService::GetInfo(
     {
         kyber_interface::ServerState* server = response->mutable_server();
         server->set_id(g_program->m_server->m_serverId);
+        if (g_program->m_server->m_creationInfo)
+        {
+            server->set_port(g_program->m_server->m_creationInfo->port);
+        }
 
         server->mutable_levelsetup()->set_map(g_program->m_server->m_currentLevel);
         server->mutable_levelsetup()->set_mode(g_program->m_server->m_currentMode);
@@ -49,7 +53,7 @@ ServerUnaryReactor* CommonInterfaceService::GetInfo(
     }
     else if (g_program->m_client->m_connected)
     {
-        response->mutable_client()->set_serverid(g_program->m_server->m_socketSpawnInfo.serverName);
+        response->mutable_client()->set_serverid(g_program->m_client->m_currentServerId);
     }
 
     bool vivoxInitialized =

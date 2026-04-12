@@ -6,6 +6,7 @@ import 'package:grpc/grpc.dart';
 import 'package:kyber/gen/Proto/kyber_common.pb.dart';
 import 'package:kyber/kyber.dart' hide ServerMod;
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/image_helper.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/map_rotation/models/map_rotation_entry.dart';
@@ -31,6 +32,7 @@ class SettingsBoxHeader extends StatelessWidget {
   final int selectedPage;
 
   Future<void> uploadHashes(BuildContext context) async {
+    final l10n = context.l10n;
     final currentCollection = context
         .read<HostCollectionCubit>()
         .state
@@ -117,23 +119,23 @@ class SettingsBoxHeader extends StatelessWidget {
               .then((_) => Navigator.of(context).pop());
 
           return KyberContentDialog(
-            title: Text('MAP IMAGES'.toUpperCase()),
+            title: Text(l10n.text('host.mapImages.title')),
             constraints: const BoxConstraints(maxWidth: 500, maxHeight: 300),
             content: Column(
               children: [
-                const Row(
+                Row(
                   mainAxisAlignment: MainAxisAlignment.center,
                   children: [
-                    SizedBox(
+                    const SizedBox(
                       height: 15,
                       width: 15,
                       child: ProgressRing(),
                     ),
-                    SizedBox(
+                    const SizedBox(
                       width: 15,
                     ),
                     Text(
-                      'Uploading map images...',
+                      l10n.text('host.mapImages.uploading'),
                       style: TextStyle(
                         fontSize: 17,
                       ),
@@ -144,7 +146,10 @@ class SettingsBoxHeader extends StatelessWidget {
                   height: 10,
                 ),
                 Text(
-                  'Please wait while ${missingHashes.length} map images are uploaded. This may take a few seconds.',
+                  l10n.text(
+                    'host.mapImages.description',
+                    params: {'count': missingHashes.length},
+                  ),
                   style: FluentTheme.of(context).typography.body?.copyWith(
                     color: kWhiteColor,
                   ),
@@ -165,6 +170,7 @@ class SettingsBoxHeader extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Padding(
       padding: const EdgeInsets.all(10).copyWith(left: 10, top: 20, right: 20),
       child: Column(
@@ -182,7 +188,7 @@ class SettingsBoxHeader extends StatelessWidget {
                     FormBuilderValidators.minLength(3),
                     FormBuilderValidators.maxLength(25),
                   ]),
-                  placeholder: 'Server Name',
+                  placeholder: l10n.text('host.serverNamePlaceholder'),
                 ),
               );
             },
@@ -209,7 +215,9 @@ class SettingsBoxHeader extends StatelessWidget {
                   return Row(
                     children: [
                       KyberButton(
-                        text: state.selected ? 'UPDATE SERVER' : 'START SERVER',
+                        text: state.selected
+                            ? l10n.text('host.updateServer')
+                            : l10n.text('host.startServer'),
                         onPressed: () async {
                           final form = hostingForm.currentState!;
                           if (!form.saveAndValidate()) {
@@ -236,12 +244,29 @@ class SettingsBoxHeader extends StatelessWidget {
                                   ),
                                 );
                             NotificationService.showNotification(
-                              message: 'Server updated',
+                              message: l10n.text('host.serverUpdated'),
                             );
                             return;
                           }
 
-                          await uploadHashes(context);
+                          final onlineMode =
+                              (form.value['onlineMode'] as bool?) ?? true;
+                          final serverPort = int.parse(
+                            (form.value['serverPort'] as String).trim(),
+                          );
+
+                          if (onlineMode && serverPort != 25200) {
+                            NotificationService.error(
+                              message: l10n.text(
+                                'host.customPortOnlineUnsupported',
+                              ),
+                            );
+                            return;
+                          }
+
+                          if (onlineMode) {
+                            await uploadHashes(context);
+                          }
 
                           final mapRotation = context
                               .read<MapRotationCubit>()
@@ -283,8 +308,7 @@ class SettingsBoxHeader extends StatelessWidget {
 
                           if (mapRotation.isEmpty) {
                             NotificationService.error(
-                              message:
-                                  'You need to add at least one map to the map rotation',
+                              message: l10n.text('host.mapRotationRequired'),
                             );
                             return;
                           }
@@ -296,23 +320,27 @@ class SettingsBoxHeader extends StatelessWidget {
                               password: form.value['password'] as String?,
                               maxPlayers: form.value['maxPlayers'] as int?,
                               mapRotation: mapRotation,
+                              onlineMode: onlineMode,
+                              port: serverPort,
                             );
 
-                            await sl
-                                .get<KyberGRPCService>()
-                                .serverBrowserClient
-                                .validateServer(
-                                  RegisterServerRequest(
-                                    name: startRequest.name,
-                                    description: startRequest.description,
-                                    password: startRequest.password,
-                                    maxPlayerCount: startRequest.maxPlayers,
-                                    explodedMods: [],
-                                    mods: [],
-                                    levelSetup: LevelSetup(map: '', mode: ''),
-                                    statsSource: .KYBER,
-                                  ),
-                                );
+                            if (onlineMode) {
+                              await sl
+                                  .get<KyberGRPCService>()
+                                  .serverBrowserClient
+                                  .validateServer(
+                                    RegisterServerRequest(
+                                      name: startRequest.name,
+                                      description: startRequest.description,
+                                      password: startRequest.password,
+                                      maxPlayerCount: startRequest.maxPlayers,
+                                      explodedMods: [],
+                                      mods: [],
+                                      levelSetup: LevelSetup(map: '', mode: ''),
+                                      statsSource: .KYBER,
+                                    ),
+                                  );
+                            }
 
                             final initialCommands = <String>[];
 
@@ -334,8 +362,9 @@ class SettingsBoxHeader extends StatelessWidget {
                             if (sl.isRegistered<MaximaGameInstance>()) {
                               if (initialCommands.isNotEmpty) {
                                 NotificationService.showNotification(
-                                  message:
-                                      'Friendly Fire and Health Regeneration can only be set when no game is running',
+                                  message: l10n.text(
+                                    'host.initialCommandsRequireIdle',
+                                  ),
                                   severity: InfoBarSeverity.error,
                                 );
                               }
@@ -371,7 +400,10 @@ class SettingsBoxHeader extends StatelessWidget {
                               'Failed to start server: ${e.message}',
                             );
                             NotificationService.error(
-                              message: 'Failed to start server: ${e.message}',
+                              message: l10n.text(
+                                'host.failedToStartServer',
+                                params: {'message': e.message ?? ''},
+                              ),
                             );
                           } catch (e, stack) {
                             Logger.root.severe(
@@ -380,8 +412,9 @@ class SettingsBoxHeader extends StatelessWidget {
                               stack,
                             );
                             NotificationService.error(
-                              message:
-                                  'An unexpected error occurred while starting the server',
+                              message: l10n.text(
+                                'host.unexpectedStartServerError',
+                              ),
                             );
                           }
                         },
@@ -395,8 +428,8 @@ class SettingsBoxHeader extends StatelessWidget {
                 width: 220,
                 child: KyberTabBar(
                   tabs: [
-                    Text('Settings'.toUpperCase()),
-                    Text('Info'.toUpperCase()),
+                    Text(l10n.text('common.settings')),
+                    Text(l10n.text('common.info')),
                   ],
                   onChanged: onPageChanged,
                   selectedIndex: selectedPage,

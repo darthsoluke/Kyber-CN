@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
 import 'package:kyber_launcher/features/mods/helper/mod_helper.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_browser_cubit.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -14,6 +15,10 @@ class ServerBrowserHelper {
     required Server server,
     bool ignoreInstalled = false,
   }) {
+    if (LanServerHelper.isLanServer(server) && !LanServerHelper.isJoinable(server)) {
+      return false;
+    }
+
     if (server.isFull(context)) {
       return false;
     }

@@ -369,6 +369,7 @@ class _FilterSelector<T> extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return GridView.builder(
       shrinkWrap: true,
       gridDelegate: mt.SliverGridDelegateWithMaxCrossAxisExtent(
@@ -419,8 +420,8 @@ class _FilterSelector<T> extends StatelessWidget {
                     fontSize: 14,
                     fontFamily: FontFamily.battlefrontUI,
                   ),
-                  child: const Text(
-                    'ALL',
+                  child: Text(
+                    l10n.text('common.all'),
                     style: TextStyle(
                       fontSize: 14,
                       fontFamily: FontFamily.battlefrontUI,
@@ -501,20 +502,21 @@ class _KyberSearchInput extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return mt.TextFormField(
       style: const mt.TextStyle(
         fontFamily: FontFamily.battlefrontUI,
         fontSize: 15,
         height: 1,
       ),
-      decoration: const mt.InputDecoration(
+      decoration: mt.InputDecoration(
         isDense: true,
         border: mt.InputBorder.none,
         enabledBorder: mt.InputBorder.none,
         focusedBorder: mt.InputBorder.none,
-        contentPadding: EdgeInsets.symmetric(horizontal: 10, vertical: 0.5),
-        hintText: 'SEARCH...',
-        hintStyle: TextStyle(
+        contentPadding: const EdgeInsets.symmetric(horizontal: 10, vertical: 0.5),
+        hintText: l10n.text('common.searchPlaceholder'),
+        hintStyle: const TextStyle(
           color: kInactiveColor,
           fontFamily: FontFamily.battlefrontUI,
           fontSize: 15,

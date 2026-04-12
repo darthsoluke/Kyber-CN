@@ -4,6 +4,7 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_svg/svg.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/events/providers/event_cubic.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
@@ -15,6 +16,7 @@ class HomeEventList extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Expanded(
       child: KyberCard(
         padding: EdgeInsets.zero,
@@ -41,7 +43,7 @@ class HomeEventList extends StatelessWidget {
             return Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                const SizedBox(
+                SizedBox(
                   height: 60,
                   child: Padding(
                     padding: EdgeInsets.symmetric(horizontal: 20, vertical: 12),
@@ -50,16 +52,16 @@ class HomeEventList extends StatelessWidget {
                       mainAxisAlignment: MainAxisAlignment.center,
                       children: [
                         Text(
-                          'EVENTS & ANNOUNCEMENTS',
-                          style: TextStyle(
+                          l10n.text('serverBrowser.events.title'),
+                          style: const TextStyle(
                             fontFamily: FontFamily.battlefrontUI,
                             fontSize: 21,
                             height: 1,
                           ),
                         ),
                         Text(
-                          'VIEW UPCOMING EVENTS & RECEIVE ANNOUNCEMENTS',
-                          style: TextStyle(
+                          l10n.text('serverBrowser.events.description'),
+                          style: const TextStyle(
                             fontFamily: FontFamily.battlefrontUI,
                             fontSize: 14,
                             color: kWhiteColor,

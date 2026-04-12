@@ -7,10 +7,12 @@
 #include <SDK/TypeInfo.h>
 #include <SDK/Types.h>
 #include <Core/Settings.h>
+#include <Core/LanDiscovery.h>
 #include <Persistence/PersistenceManager.h>
 #include <Core/EventManager.h>
 
 #include <Windows.h>
+#include <memory>
 #include <optional>
 #include <string>
 
@@ -25,6 +27,7 @@ struct ServerCreationInfo
     std::string name;
     std::string description;
     std::string password;
+    uint32_t port = 25200;
 
     std::string level;
     std::string mode;
@@ -72,7 +75,7 @@ public:
     Server();
     ~Server();
 
-    bool IsRunning();
+    bool IsRunning() const;
 
     void Initialize();
     void InitializeGameHooks();
@@ -82,6 +85,7 @@ public:
     void InitializeGameSettings();
     void OnClientStartup();
     void SendConsoleMessage(const std::string& message);
+    void ApplyRuntimeSettings(const ServerCreationInfo& info);
 
     void Start(const ServerCreationInfo& info, bool changeState = true);
     void Stop();
@@ -108,6 +112,7 @@ public:
 
     SocketManager* m_socketManager;
     ISocket* m_natClient;
+    std::unique_ptr<LanDiscoveryService> m_lanDiscovery;
     ServerPlayerManager* m_playerManager;
     PersistenceManager* m_persistenceManager;
     EventManager* m_eventManager;
@@ -129,6 +134,7 @@ public:
     bool m_restarting;
     bool m_hooksRemoved;
     bool m_levelLoaded;
+    float m_heartbeatTimer;
     Mutex<LoadLevelRequest> m_latestLoadLevelRequest;
 };
 } // namespace Kyber

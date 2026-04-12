@@ -27,6 +27,17 @@ import 'package:path/path.dart' as p;
 class MaximaHelper {
   static final Logger _logger = Logger('maxima_helper');
 
+  static bool _hasConfiguredMods(InitializeRequest? initializeRequest) {
+    if (initializeRequest == null || !initializeRequest.hasModData()) {
+      return false;
+    }
+
+    final modData = initializeRequest.modData;
+    return modData.modPaths.isNotEmpty ||
+        modData.mods.isNotEmpty ||
+        modData.explodedMods.isNotEmpty;
+  }
+
   static Future<void> requestGameLaunch(
     BuildContext context, {
     ModCollectionMetaData? modCollection,
@@ -143,18 +154,23 @@ class MaximaHelper {
       throw Exception('PATH environment variable is not set');
     }
 
+    final moduleVersionService = ModuleVersionService();
+    final requiresModSupport = _hasConfiguredMods(initializeRequest);
+    final moduleDirectory = await moduleVersionService.getLaunchModuleDirectory(
+      requireModSupport: requiresModSupport,
+    );
     final grpcDebug = Preferences.debug.grpcDebugLogs;
     final moduleDebug = Preferences.debug.moduleDebugLogs;
-    final newPath = '$path;${FileHelper.getModuleDirectory().path}';
+    final newPath = '$path;$moduleDirectory';
     final interfacePort = await KyberNetworkHelper.findAvailablePort();
     final kToken = await sl.get<KyberGRPCService>().getAuthToken(
       await maxima.getAuthToken(),
     );
-    ProcessEnv.set('KYBER_API_TOKEN', kToken);
-    ProcessEnv.set(
-      'KYBER_MODULE_VERSION',
-      (await VersionModule.module.getCurrentVersion())!,
+    final moduleVersion = await moduleVersionService.getRuntimeVersion(
+      moduleDirectory: moduleDirectory,
     );
+    ProcessEnv.set('KYBER_API_TOKEN', kToken);
+    ProcessEnv.set('KYBER_MODULE_VERSION', moduleVersion);
     ProcessEnv.set('KYBER_INTERFACE_PORT', interfacePort.toString());
     ProcessEnv.set(
       'KYBER_HTTP_HOSTNAME',
@@ -162,6 +178,12 @@ class MaximaHelper {
     );
     ProcessEnv.set('PATH', newPath);
     ProcessEnv.set('KYBER_API_HOSTNAME', sl.get<KyberGRPCService>().host);
+
+    if (_hasConfiguredMods(initializeRequest)) {
+      ProcessEnv.delete('KYBER_DISABLE_MODLOADER');
+    } else {
+      ProcessEnv.set('KYBER_DISABLE_MODLOADER', '1');
+    }
 
     if (grpcDebug) {
       ProcessEnv.set('GRPC_TRACE', 'all');
@@ -212,7 +234,7 @@ class MaximaHelper {
           .firstWhere((e) => e == 'RequestLicense');
       await maxima.injectKyber(
         pid: gamePID,
-        path: p.join(FileHelper.getModuleDirectory().path, 'Kyber.dll'),
+        path: p.join(moduleDirectory, 'Kyber.dll'),
       );
     } catch (e) {
       if (e is AnyhowException) {

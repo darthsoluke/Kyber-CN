@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/settings/screens/aaa.dart';
 import 'package:kyber_launcher/features/settings/screens/pages/accounts_and_updates.dart';
 import 'package:kyber_launcher/features/settings/screens/pages/language_and_accessibility.dart';
@@ -34,41 +35,45 @@ class _SettingsListState extends State<SettingsList> {
     super.initState();
   }
 
-  final items = <Map<String, dynamic>>[
-    {
-      'title': 'LANGUAGE & ACCESSIBILITY',
-      'description': 'CHANGE LANGUAGE, PROXY & ACCESSIBILITY SETTINGS',
-      'child': const LanguageAndAccessibility(),
-    },
-    {
-      'title': 'MOD CONFIGURATION',
-      'description': 'CONFIGURE MODS SETTINGS, IMPORT FROM FROSTY & MORE',
-      'child': const ModSupport(),
-    },
-    {
-      'title': 'CREDITS LIST',
-      'description': 'VIEW DEVELOPERS, CONTRIBUTORS & PATREON SUPPORTERS',
-      'child': const Credits(),
-    },
-    {
-      'title': 'INGAME SETTINGS',
-      'description': 'Configure Proximity Chat settings'.toUpperCase(),
-      'child': const ProximityChat(),
-    },
-    {
-      'title': 'LOGS & ACTIVITY',
-      'description': 'VIEW ACTIVITY & DEBUG LOGGING SETTINGS',
-      'child': const LogsAndActivity(),
-    },
-    {
-      'title': 'ACCOUNTS & UPDATES',
-      'description': 'LOGOUT, UPDATE SETTINGS & MORE',
-      'child': const AccountsAndUpdates(),
-    },
-  ];
+  List<Map<String, dynamic>> _items(BuildContext context) {
+    final l10n = context.l10n;
+    return <Map<String, dynamic>>[
+      {
+        'title': l10n.text('settings.languageAccessibility.title'),
+        'description': l10n.text('settings.languageAccessibility.description'),
+        'child': const LanguageAndAccessibility(),
+      },
+      {
+        'title': l10n.text('settings.modConfiguration.title'),
+        'description': l10n.text('settings.modConfiguration.description'),
+        'child': const ModSupport(),
+      },
+      {
+        'title': l10n.text('settings.credits.title'),
+        'description': l10n.text('settings.credits.description'),
+        'child': const Credits(),
+      },
+      {
+        'title': l10n.text('settings.ingame.title'),
+        'description': l10n.text('settings.ingame.description'),
+        'child': const ProximityChat(),
+      },
+      {
+        'title': l10n.text('settings.logs.title'),
+        'description': l10n.text('settings.logs.description'),
+        'child': const LogsAndActivity(),
+      },
+      {
+        'title': l10n.text('settings.accounts.title'),
+        'description': l10n.text('settings.accounts.description'),
+        'child': const AccountsAndUpdates(),
+      },
+    ];
+  }
 
   @override
   Widget build(BuildContext context) {
+    final items = _items(context);
     if (selectedIndex != null) {
       return _SettingsSubPage(
         title: items.elementAt(selectedIndex!)['title'] as String,
@@ -164,7 +169,13 @@ class _SettingsListState extends State<SettingsList> {
                 }
 
                 return Text(
-                  'VERSION: ${snapshot.data?.version}#CL${snapshot.data?.buildNumber}',
+                  context.l10n.text(
+                    'settings.version',
+                    params: {
+                      'version': snapshot.data?.version ?? '',
+                      'build': snapshot.data?.buildNumber ?? '',
+                    },
+                  ),
                   style: const TextStyle(
                     fontFamily: FontFamily.iBMPlexMono,
                     fontSize: 13,

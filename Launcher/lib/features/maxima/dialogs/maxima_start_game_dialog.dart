@@ -47,17 +47,73 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
   bool preloadingMods = false;
   String? lastEvent;
 
+  bool _isOfflineLanServerLaunch(InitializeRequest request) {
+    return request.hasStartServer() &&
+        request.startServer.hasOnlineMode() &&
+        !request.startServer.onlineMode;
+  }
+
+  bool _requiresModuleModSupport(InitializeRequest request) {
+    if (!request.hasModData()) {
+      return false;
+    }
+
+    return request.modData.modPaths.isNotEmpty ||
+        request.modData.mods.isNotEmpty ||
+        request.modData.explodedMods.isNotEmpty;
+  }
+
   @override
   void initState() {
     SchedulerBinding.instance.addPostFrameCallback((_) async {
-      final available = await ModuleVersionService().updateAvailable(
-        module: VersionModule.module,
-      );
-      if (available) {
+      final req = widget.initializeRequest ?? .new();
+      final moduleVersionService = ModuleVersionService();
+      final requiresModSupport = _requiresModuleModSupport(req);
+      var hasBundledModule = false;
+      try {
+        hasBundledModule = await moduleVersionService
+            .installBundledModuleIfAvailable(
+              requireModSupport: requiresModSupport,
+            );
+      } catch (e, st) {
+        Logger.root.warning(
+          'Failed to install bundled module. Falling back to update check.',
+          e,
+          st,
+        );
+      }
+      final isOfflineLanNoMods =
+          _isOfflineLanServerLaunch(req) && !requiresModSupport;
+      final canUseLocalLanModule =
+          isOfflineLanNoMods &&
+          moduleVersionService.hasLaunchableModule(requireModSupport: false);
+      var shouldUpdateModule = false;
+      if (hasBundledModule) {
+        shouldUpdateModule = false;
+      } else if (canUseLocalLanModule) {
+        try {
+          shouldUpdateModule = await moduleVersionService.updateAvailable(
+            module: VersionModule.module,
+          );
+        } catch (e, st) {
+          Logger.root.warning(
+            'Failed to check for module updates during offline LAN launch. '
+            'Using local module instead.',
+            e,
+            st,
+          );
+        }
+      } else {
+        shouldUpdateModule = await moduleVersionService.updateAvailable(
+          module: VersionModule.module,
+        );
+      }
+
+      if (shouldUpdateModule) {
         try {
           setState(() => updating = true);
 
-          await ModuleVersionService().updateVersion(
+          await moduleVersionService.updateVersion(
             module: VersionModule.module,
           );
 
@@ -80,7 +136,10 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
           Logger.root.severe('Failed to update Kyber Module', e, st);
           await Sentry.captureException(e, stackTrace: st);
           NotificationService.showNotification(
-            message: 'Failed to update Kyber Module: $message',
+            message: Localization.current.text(
+              'maxima.failedToUpdateModule',
+              params: {'message': message},
+            ),
             severity: InfoBarSeverity.error,
           );
 
@@ -90,7 +149,6 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
         }
       }
 
-      final req = widget.initializeRequest ?? .new();
       if (Preferences.general.enabledPreloadMods) {
         setState(() => preloadingMods = true);
         final preloadedMods = await PreloadedModsHelper.preloadMods();
@@ -112,7 +170,7 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
       await checkService();
       await MaximaHelper.startGame(
             gameDataPath: widget.gameDataDir,
-            initializeRequest: widget.initializeRequest,
+            initializeRequest: req,
             mods: widget.mods,
           )
           .then((value) async {
@@ -182,7 +240,10 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
               }
 
               NotificationService.showNotification(
-                message: 'Failed to start game: ${error.message}',
+                message: Localization.current.text(
+                  'maxima.failedToStartGame',
+                  params: {'message': error.message},
+                ),
                 severity: InfoBarSeverity.error,
               );
             } else if (error is PanicException) {
@@ -193,8 +254,9 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
               showKyberDialog(
                 context: navigatorKey.currentContext!,
                 builder: (context) {
+                  final l10n = context.l10n;
                   return KyberContentDialog(
-                    title: Text('Failed to start game'.toUpperCase()),
+                    title: Text(l10n.text('maxima.failedToStartGameTitle')),
                     content: Text(
                       error.message,
                       style: const TextStyle(
@@ -205,7 +267,7 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
                     actions: [
                       KyberButton(
                         onPressed: () => Navigator.of(context).pop(),
-                        text: 'Close',
+                        text: l10n.text('common.close'),
                       ),
                     ],
                   );
@@ -213,7 +275,10 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
               );
             } else {
               NotificationService.showNotification(
-                message: 'Failed to start game: $error',
+                message: Localization.current.text(
+                  'maxima.failedToStartGame',
+                  params: {'message': '$error'},
+                ),
                 severity: InfoBarSeverity.error,
               );
             }
@@ -242,8 +307,9 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return KyberContentDialog(
-      title: Text('GAME LAUNCHING'.toUpperCase()),
+      title: Text(l10n.text('maxima.gameLaunching')),
       constraints: const BoxConstraints(maxWidth: 500, maxHeight: 300),
       content: Column(
         children: [
@@ -260,12 +326,12 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
               ),
               if (updating)
                 Text(
-                  'Updating Kyber Module...',
+                  l10n.text('maxima.updatingModule'),
                   style: FluentTheme.of(context).typography.bodyLarge,
                 ),
               if (!updating)
                 Text(
-                  'Starting Game...',
+                  l10n.text('maxima.startingGame'),
                   style: FluentTheme.of(context).typography.bodyLarge,
                 ),
             ],
@@ -274,7 +340,7 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
             height: 10,
           ),
           Text(
-            'Please wait while the game is starting. This may take a few seconds.',
+            l10n.text('maxima.startingGameDescription'),
             style: FluentTheme.of(context).typography.body?.copyWith(
               color: kWhiteColor,
             ),

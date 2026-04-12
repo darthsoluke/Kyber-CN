@@ -7,6 +7,7 @@ import 'package:grpc/grpc.dart' hide Server;
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
 import 'package:web_socket_channel/io.dart';
@@ -54,13 +55,29 @@ class IngameViewCubit extends Cubit<IngameViewState> {
 
     try {
       final id = serverId ?? state.id;
+      final cachedServer = state.server;
       _logger.info('Loading server $id');
       emit(IngameViewState(id: id));
       final service = sl.get<KyberGRPCService>();
-      final server = await service.serverBrowserClient.getServer(
-        ServerRequest(id: id),
-      );
+      late final Server server;
+      if (id != null && LanServerHelper.isLanServerId(id)) {
+        final lanServer = LanServerHelper.lookup(id) ?? cachedServer;
+        if (lanServer == null) {
+          throw Exception('LAN server is no longer available');
+        }
+        server = lanServer;
+      } else {
+        server = await service.serverBrowserClient.getServer(
+          ServerRequest(id: id),
+        );
+      }
+
       emit(state.copyWith(id: id, server: server));
+
+      if (id != null && LanServerHelper.isLanServerId(id)) {
+        _logger.info('Skipping websocket subscription for offline LAN server');
+        return;
+      }
 
       _logger.info('Subscribing to server events');
 

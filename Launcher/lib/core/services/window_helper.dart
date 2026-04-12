@@ -24,49 +24,67 @@ class WindowHelper {
       );
     }
 
-    unawaited(
-      windowManager.waitUntilReadyToShow().then((_) async {
-        await windowManager.setTitleBarStyle(
-          TitleBarStyle.hidden,
-          windowButtonVisibility: false,
+    await windowManager.waitUntilReadyToShow();
+
+    try {
+      await windowManager.setTitleBarStyle(
+        TitleBarStyle.hidden,
+        windowButtonVisibility: false,
+      );
+
+      await windowManager.setBackgroundColor(Colors.transparent);
+      await windowManager.setSize(size);
+      await windowManager.setBrightness(Brightness.dark);
+      await windowManager.setMinimumSize(_initialSize);
+      if (!rememberedWindow) {
+        await windowManager.center();
+      }
+
+      if (rememberedWindow &&
+          Preferences.windowData.windowX != null &&
+          Preferences.windowData.windowY != null) {
+        final offset = Offset(
+          Preferences.windowData.windowX!,
+          Preferences.windowData.windowY!,
         );
-
-        await windowManager.setBackgroundColor(Colors.transparent);
-        await windowManager.setSize(size);
-        await windowManager.setBrightness(Brightness.dark);
-        await windowManager.setMinimumSize(_initialSize);
-        if (!rememberedWindow) {
-          await windowManager.center();
-        }
-
-        if (rememberedWindow &&
-            Preferences.windowData.windowX != null &&
-            Preferences.windowData.windowY != null) {
-          final offset = Offset(
-            Preferences.windowData.windowX!,
-            Preferences.windowData.windowY!,
+        if (await isOnScreen(offset)) {
+          await windowManager.setPosition(offset);
+        } else {
+          Logger('bootstrap').warning(
+            'Remembered window position is not on any screen, centering instead.',
           );
-          if (await isOnScreen(offset)) {
-            await windowManager.setPosition(offset);
-          } else {
-            Logger('bootstrap').warning(
-              'Remembered window position is not on any screen, centering instead.',
-            );
-            await windowManager.center();
-            Preferences.windowData.windowX = null;
-            Preferences.windowData.windowY = null;
-          }
+          await windowManager.center();
+          Preferences.windowData.windowX = null;
+          Preferences.windowData.windowY = null;
         }
+      }
 
-        if (rememberedWindow && Preferences.windowData.windowMaximized) {
-          await windowManager.maximize();
-        }
-
+      if (rememberedWindow && Preferences.windowData.windowMaximized) {
+        await windowManager.maximize();
+      }
+    } catch (error, stackTrace) {
+      Logger('bootstrap').severe(
+        'Window initialization failed before show',
+        error,
+        stackTrace,
+      );
+    } finally {
+      try {
         await windowManager.show();
+        await windowManager.focus();
         await windowManager.setSkipTaskbar(false);
-        completedSetup.complete();
-      }),
-    );
+      } catch (error, stackTrace) {
+        Logger('bootstrap').severe(
+          'Window show/focus fallback failed',
+          error,
+          stackTrace,
+        );
+      } finally {
+        if (!completedSetup.isCompleted) {
+          completedSetup.complete();
+        }
+      }
+    }
   }
 
   static Future<bool> isOnScreen(Offset offset) async {

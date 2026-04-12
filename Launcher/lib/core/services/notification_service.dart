@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:toastification/toastification.dart';
@@ -7,7 +8,7 @@ import 'package:toastification/toastification.dart';
 class NotificationService {
   static void notImplemented() {
     showNotification(
-      message: 'Not implemented yet',
+      message: Localization.current.text('common.notImplemented'),
       severity: InfoBarSeverity.warning,
     );
   }

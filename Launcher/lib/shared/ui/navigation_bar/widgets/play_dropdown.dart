@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/maxima/helper/maxima_helper.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:kyber_launcher/shared/ui/navigation_bar/navigation_bar_list.dart';
@@ -129,6 +130,7 @@ class MenuWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return BackgroundBlur(
       borderRadius: BorderRadius.circular(2),
       blurColorOpacity: 0.6,
@@ -170,8 +172,8 @@ class MenuWidget extends StatelessWidget {
                         style: TextStyle(
                           color: hovered ? kActiveColor : Colors.white,
                         ),
-                        child: const Text(
-                          'LAUNCH GAME',
+                        child: Text(
+                          l10n.text('nav.launchGame'),
                           style: TextStyle(
                             fontSize: 18,
                           ),

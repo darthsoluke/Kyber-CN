@@ -27,9 +27,18 @@ public:
     void HandleClientServerJoin(NetworkCreatePlayerMessage* message);
     void RegisterClientUpdatePassListener(ClientUpdatePassListener* listener);
     void AttemptJoinVoip();
+    void QueueInitialJoin(
+        const std::string& id,
+        const std::string& ip,
+        uint16_t port,
+        const std::string& password,
+        bool spectate,
+        bool proxied);
+    void ProcessPendingJoin();
 
     // If proxied is true, IP is assumed to be a proxy ID
-    void JoinServer(const std::string& id, std::string ip, uint16_t port, bool spectate, bool proxied = false, bool changeState = true);
+    void JoinServer(const std::string& id, std::string ip, uint16_t port, const std::string& password, bool spectate,
+        bool proxied = false, bool changeState = true);
 
     __int64 ChangeClientState(ClientState currentClientState)
     {
@@ -41,6 +50,13 @@ public:
     void OnEvent(const Event& event) override;
 
     std::string m_joinToken;
+    std::string m_currentServerId;
+    std::string m_serverIp;
+    std::string m_serverPassword;
+    uint16_t m_serverPort;
+    bool m_hasPendingJoin;
+    bool m_pendingJoinSpectate;
+    bool m_pendingJoinProxied;
 
     ClientState m_clientState;
 

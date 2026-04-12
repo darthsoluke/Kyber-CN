@@ -1,5 +1,6 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
 
@@ -13,6 +14,7 @@ class HostingDefaultCard extends StatefulWidget {
 class _HostingDefaultCardState extends State<HostingDefaultCard> {
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return KyberCard(
       padding: EdgeInsets.zero,
       child: Column(
@@ -21,20 +23,20 @@ class _HostingDefaultCardState extends State<HostingDefaultCard> {
           Container(
             height: 65,
             padding: const EdgeInsets.all(13),
-            child: const Column(
+            child: Column(
               crossAxisAlignment: CrossAxisAlignment.start,
               children: [
                 Text(
-                  'SECURITY SETTINGS',
-                  style: TextStyle(
+                  l10n.text('host.securitySettings.title'),
+                  style: const TextStyle(
                     fontFamily: FontFamily.battlefrontUI,
                     fontSize: 21,
                     height: 1.2,
                   ),
                 ),
                 Text(
-                  'VIEW BANNED PLAYERS, MODERATORS & GUIDES',
-                  style: TextStyle(
+                  l10n.text('host.securitySettings.description'),
+                  style: const TextStyle(
                     fontFamily: FontFamily.battlefrontUI,
                     fontSize: 14,
                     color: kWhiteColor,

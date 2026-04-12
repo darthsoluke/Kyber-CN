@@ -12,32 +12,33 @@ class ModSupport extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return SuperListView(
       children: [
-        const SettingsHeader(title: 'MODS'),
+        SettingsHeader(title: l10n.text('settings.mods.header')),
         HiveListener(
           box: box,
           keys: ['enabledPreloadMods'],
           builder: (_) => KyberTable(
             items: [
               KyberTableItem.button(
-                title: 'Change Mod Directory',
-                text: 'New Directory',
+                title: l10n.text('settings.changeModDirectory'),
+                text: l10n.text('settings.newDirectory'),
                 onClick: () => showKyberDialog(
                   builder: (_) => const MoveModsDirectoryDialog(),
                   context: context,
                 ),
               ),
               KyberTableItem.button(
-                title: 'Frosty Converter',
-                text: 'Convert your Packs',
+                title: l10n.text('settings.frostyConverter'),
+                text: l10n.text('settings.convertYourPacks'),
                 onClick: () => showKyberDialog(
                   builder: (_) => const FrostyImportDialog(),
                   context: context,
                 ),
               ),
               KyberTableItem.switchButton(
-                title: 'Kyber Preloaded Mods',
+                title: l10n.text('settings.kyberPreloadedMods'),
                 value: Preferences.general.enabledPreloadMods,
                 onChange: (bool value) {
                   Preferences.general.enabledPreloadMods = value;

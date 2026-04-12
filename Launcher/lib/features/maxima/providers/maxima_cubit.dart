@@ -31,6 +31,9 @@ import 'package:window_to_front/window_to_front.dart';
 part '../models/maxima_state.dart';
 
 class MaximaCubit extends Cubit<MaximaState> {
+  static const _maximaArtifactUrl =
+      'https://s3.kyber.gg/artifacts/maxima-win64.zip';
+
   MaximaCubit() : super(MaximaState.initial()) {
     init();
   }
@@ -109,13 +112,7 @@ class MaximaCubit extends Cubit<MaximaState> {
     emit(state.copyWith(status: MaximaStatus.starting));
     await _checkDebugMaximaFiles();
 
-    final currentDir = dirname(Platform.resolvedExecutable);
-    final serviceFile = File(join(currentDir, 'maxima-service.exe'));
-    final bootstrapFile = File(join(currentDir, 'maxima-bootstrap.exe'));
-
-    if ((!serviceFile.existsSync() || !bootstrapFile.existsSync()) &&
-        !kDebugMode &&
-        Platform.isWindows) {
+    if (!await _ensureMaximaFilesAvailable()) {
       return emit(
         const MaximaState(
           status: MaximaStatus.error,
@@ -194,16 +191,9 @@ class MaximaCubit extends Cubit<MaximaState> {
     try {
       logger.info('Downloading required files');
       emit(const MaximaState(status: .starting));
-      await Dio().download(
-        'https://s3.kyber.gg/artifacts/maxima-win64.zip',
-        '${Directory.current.path}\\maxima.zip',
+      await _downloadAndExtractMaximaFiles(
+        dirname(Platform.resolvedExecutable),
       );
-      await extract(
-        filePath: '${Directory.current.path}\\maxima.zip',
-        targetDir: Directory.current.path,
-      );
-
-      File('${Directory.current.path}\\maxima.zip').deleteSync();
       await init();
     } catch (e) {
       logger.severe('Error downloading maxima:', e);
@@ -357,12 +347,12 @@ class MaximaCubit extends Cubit<MaximaState> {
       }
 
       _updateTimer ??= Timer.periodic(
-          const Duration(minutes: 5),
-          (_) async {
-            logger.info('Validating session...');
-            await verifyToken();
-          },
-        );
+        const Duration(minutes: 5),
+        (_) async {
+          logger.info('Validating session...');
+          await verifyToken();
+        },
+      );
 
       return;
     } catch (e, s) {
@@ -466,6 +456,80 @@ class MaximaCubit extends Cubit<MaximaState> {
         await File(
           '.cache/maxima/maxima-x86_64-win64/maxima-service.exe',
         ).copy('build/windows/x64/runner/Debug/maxima-service.exe');
+      }
+    }
+  }
+
+  Future<bool> _ensureMaximaFilesAvailable() async {
+    if (!Platform.isWindows) {
+      return true;
+    }
+
+    final currentDir = dirname(Platform.resolvedExecutable);
+    final serviceFile = File(join(currentDir, 'maxima-service.exe'));
+    final bootstrapFile = File(join(currentDir, 'maxima-bootstrap.exe'));
+
+    if (serviceFile.existsSync() && bootstrapFile.existsSync()) {
+      return true;
+    }
+
+    logger.warning('Maxima files missing in $currentDir. Attempting recovery.');
+
+    await _copyMaximaFilesFromCache(currentDir);
+
+    if (serviceFile.existsSync() && bootstrapFile.existsSync()) {
+      logger.info('Recovered missing Maxima files from local cache');
+      return true;
+    }
+
+    try {
+      await _downloadAndExtractMaximaFiles(currentDir);
+    } catch (e, s) {
+      logger.warning('Failed to recover Maxima files automatically', e, s);
+    }
+
+    return serviceFile.existsSync() && bootstrapFile.existsSync();
+  }
+
+  Future<void> _copyMaximaFilesFromCache(String targetDir) async {
+    final cacheDir = Directory(
+      join(Directory.current.path, '.cache', 'maxima', 'maxima-x86_64-win64'),
+    );
+    if (!cacheDir.existsSync()) {
+      return;
+    }
+
+    await _copyIfMissing(
+      File(join(cacheDir.path, 'maxima-bootstrap.exe')),
+      File(join(targetDir, 'maxima-bootstrap.exe')),
+    );
+    await _copyIfMissing(
+      File(join(cacheDir.path, 'maxima-service.exe')),
+      File(join(targetDir, 'maxima-service.exe')),
+    );
+  }
+
+  Future<void> _copyIfMissing(File source, File target) async {
+    if (!source.existsSync() || target.existsSync()) {
+      return;
+    }
+
+    await source.copy(target.path);
+  }
+
+  Future<void> _downloadAndExtractMaximaFiles(String targetDir) async {
+    final zipPath = join(targetDir, 'maxima.zip');
+
+    try {
+      await Dio().download(_maximaArtifactUrl, zipPath);
+      await extract(
+        filePath: zipPath,
+        targetDir: targetDir,
+      );
+    } finally {
+      final zipFile = File(zipPath);
+      if (zipFile.existsSync()) {
+        zipFile.deleteSync();
       }
     }
   }

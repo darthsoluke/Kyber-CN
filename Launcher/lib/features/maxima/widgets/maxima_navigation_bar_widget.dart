@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/features/download_manager/models/download_state.dart';
@@ -97,7 +98,11 @@ class _MaximaNavigationBarWidgetState extends State<MaximaNavigationBarWidget> {
                                           children: [
                                             const Icon(FluentIcons.game),
                                             // when a user clicks on it a page opens with a list of all ingame users and an event chat
-                                            Text('INGAME PANEL'),
+                                            Text(
+                                              context.l10n.text(
+                                                'maxima.ingamePanel',
+                                              ),
+                                            ),
                                           ],
                                         ),
                                       ),
@@ -388,13 +393,35 @@ class _DownloadItem extends StatelessWidget {
                                     ? (extractingProgress.extracted /
                                           extractingProgress.total)
                                     : 1.0;
-                                displayText =
-                                    'EXTRACTING FILE (${extractingProgress?.extracted ?? '?'}/${extractingProgress?.total ?? '?'})';
+                                displayText = context.l10n.text(
+                                  'maxima.extractingFileProgress',
+                                  params: {
+                                    'current':
+                                        extractingProgress?.extracted ?? '?',
+                                    'total':
+                                        extractingProgress?.total ?? '?',
+                                  },
+                                );
                               } else if (xProgress >= 1) {
-                                displayText = 'EXTRACTING FILE';
+                                displayText = context.l10n.text(
+                                  'maxima.extractingFile',
+                                );
                               } else {
                                 displayText =
-                                    'DOWNLOADING (${(progress * 100).toInt()}% ${formatBytes((expectedFileSize * progress).toInt(), 1)}/${formatBytes(expectedFileSize, 1)})';
+                                    context.l10n.text(
+                                      'maxima.downloadingProgress',
+                                      params: {
+                                        'percent': (progress * 100).toInt(),
+                                        'current': formatBytes(
+                                          (expectedFileSize * progress).toInt(),
+                                          1,
+                                        ),
+                                        'total': formatBytes(
+                                          expectedFileSize,
+                                          1,
+                                        ),
+                                      },
+                                    );
                               }
                               return Stack(
                                 children: [
@@ -458,18 +485,18 @@ class _DownloadItem extends StatelessWidget {
                               );
                             }
 
-                            return const Row(
+                            return Row(
                               mainAxisAlignment: MainAxisAlignment.center,
                               spacing: 6,
                               children: [
-                                Icon(
+                                const Icon(
                                   FluentIcons.download,
                                   color: kWhiteColor,
                                   size: 15,
                                 ),
                                 Text(
-                                  'DOWNLOAD MANAGER',
-                                  style: TextStyle(
+                                  context.l10n.text('common.downloadManager'),
+                                  style: const TextStyle(
                                     fontFamily: FontFamily.battlefrontUI,
                                     fontSize: 14,
                                   ),

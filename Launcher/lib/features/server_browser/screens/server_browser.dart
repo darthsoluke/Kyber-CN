@@ -3,14 +3,19 @@ import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/helper/kyber_status_helper.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_api_status_cubit.dart';
 import 'package:kyber_launcher/features/lightswitch/models/status.dart';
+import 'package:kyber_launcher/features/server_browser/dialogs/lan_direct_connect_dialog.dart';
 import 'package:kyber_launcher/features/server_browser/constants/modes.dart';
+import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_list_state.dart';
+import 'package:kyber_launcher/features/server_browser/providers/lan_server_list_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_browser_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/providers/server_list_cubit.dart';
+import 'package:kyber_launcher/features/server_browser/widgets/lan_server_list_widget.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/event_list.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/server_info_box/server_info_box.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/server_list/server_list.dart';
@@ -29,6 +34,10 @@ class ServerBrowser extends StatefulWidget {
 }
 
 class _ServerBrowserState extends State<ServerBrowser> {
+  int _sourceIndex = 0;
+
+  bool get _showLanLobby => _sourceIndex == 1;
+
   @override
   void initState() {
     super.initState();
@@ -43,39 +52,48 @@ class _ServerBrowserState extends State<ServerBrowser> {
           flex: 6,
           child: BorderedContent(
             overlappingBorder: true,
-            header: BlocListener<ServerListCubit, ServerListState>(
-              listener: (context, state) {
-                state as ServerListLoaded;
+            header: MultiBlocListener(
+              listeners: [
+                BlocListener<ServerListCubit, ServerListState>(
+                  listener: (context, state) {
+                    if (_showLanLobby) {
+                      return;
+                    }
 
-                final selectedServer = context
-                    .read<ServerBrowserCubit>()
-                    .state
-                    .selectedServer;
-                if (selectedServer == null) {
-                  return;
-                }
+                    _syncSelectedServer(
+                      context,
+                      (state as ServerListLoaded).servers,
+                    );
+                  },
+                  listenWhen: (previous, current) =>
+                      current is ServerListLoaded,
+                ),
+                BlocListener<LanServerListCubit, ServerListState>(
+                  listener: (context, state) {
+                    if (!_showLanLobby) {
+                      return;
+                    }
 
-                final serverId = selectedServer is ServerGroup
-                    ? selectedServer.serverInfo.id
-                    : (selectedServer as Server).id;
-
-                final server = state.servers.where((s) {
-                  final id = s is ServerGroup
-                      ? s.serverInfo.id
-                      : (s as Server).id;
-                  return id == serverId;
-                }).toList();
-
-                if (server.isEmpty) {
+                    _syncSelectedServer(
+                      context,
+                      (state as ServerListLoaded).servers,
+                    );
+                  },
+                  listenWhen: (previous, current) =>
+                      current is ServerListLoaded,
+                ),
+              ],
+              child: _HeaderBar(
+                sourceIndex: _sourceIndex,
+                onSourceChanged: (value) {
+                  setState(() => _sourceIndex = value);
                   context.read<ServerBrowserCubit>().clearServer();
-                }
-              },
-              listenWhen: (previous, current) => current is ServerListLoaded,
-              child: const _HeaderBar(),
+                },
+              ),
             ),
-            content: const ServerListWidget(
-              key: Key('server_list'),
-            ),
+            content: _showLanLobby
+                ? const LanServerListWidget(key: Key('lan_server_list'))
+                : const ServerListWidget(key: Key('server_list')),
           ),
         ),
         const SizedBox(width: 20),
@@ -103,79 +121,219 @@ class _ServerBrowserState extends State<ServerBrowser> {
       ],
     );
   }
+
+  void _syncSelectedServer(BuildContext context, List<Object> servers) {
+    final selectedServer = context
+        .read<ServerBrowserCubit>()
+        .state
+        .selectedServer;
+    if (selectedServer == null) {
+      return;
+    }
+
+    final serverId = selectedServer is ServerGroup
+        ? selectedServer.serverInfo.id
+        : (selectedServer as Server).id;
+
+    final server = servers.where((s) {
+      final id = s is ServerGroup ? s.serverInfo.id : (s as Server).id;
+      return id == serverId;
+    }).toList();
+
+    if (server.isEmpty) {
+      context.read<ServerBrowserCubit>().clearServer();
+    }
+  }
 }
 
 class _HeaderBar extends StatelessWidget {
-  const _HeaderBar({super.key});
+  const _HeaderBar({
+    required this.sourceIndex,
+    required this.onSourceChanged,
+    super.key,
+  });
+
+  final int sourceIndex;
+  final ValueChanged<int> onSourceChanged;
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return Align(
       child: SizedBox(
         child: Row(
           children: [
-            /*SizedBox(
-              child: KyberButton(
-                onPressed: () async => MaximaHelper.requestGameLaunch(context),
-                icon: SvgPicture.network(
-                  'https://upload.wikimedia.org/wikipedia/commons/0/0d/Electronic-Arts-Logo.svg',
-                  height: 15,
-                  width: 15,
-                  color: kWhiteColor,
-                ),
-                text: 'PLAY',
-              ),
-            ),
-            const SizedBox(width: 15),*/
             SizedBox(
-              width: 40,
+              width: 190,
               child: KyberTabBar(
                 tabs: [
-                  SizedBox(
-                    height: 17,
-                    child: Assets.icons.kblSwap.svg(
-                      color: kWhiteColor,
-                    ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(mt.Icons.public, size: 16),
+                      const SizedBox(width: 6),
+                      Text(l10n.text('serverBrowser.online')),
+                    ],
+                  ),
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(mt.Icons.wifi_tethering, size: 16),
+                      const SizedBox(width: 6),
+                      Text(l10n.text('serverBrowser.lan')),
+                    ],
                   ),
                 ],
-                onChanged: (value) =>
-                    context.read<ServerListCubit>().loadServers(),
-                selectedIndex: -1,
+                onChanged: onSourceChanged,
+                selectedIndex: sourceIndex,
               ),
             ),
             const SizedBox(width: 15),
-            const Expanded(
-              flex: 2,
-              child: _FilterDropdown(),
-            ),
-            const SizedBox(width: 15),
-            SizedBox(
-              width: 120,
-              child: BlocBuilder<ServerListCubit, ServerListState>(
-                builder: (context, state) {
-                  final pageText = '${state.page ?? 0}/${state.pages ?? 0}';
-
-                  return KyberTabBar(
-                    selectedIndex: -1,
-                    onChanged: (value) {
-                      if (value == 0) {
-                        context.read<ServerListCubit>().previousPage();
-                      } else if (value == 2) {
-                        context.read<ServerListCubit>().nextPage();
-                      }
-                    },
-                    tabs: [
-                      const Icon(mt.Icons.arrow_back_ios_new_rounded),
-                      Text(pageText),
-                      const Icon(mt.Icons.arrow_forward_ios_rounded),
-                    ],
-                  );
-                },
+            if (sourceIndex == 0) ...[
+              const Expanded(
+                flex: 2,
+                child: _FilterDropdown(),
               ),
-            ),
+              const SizedBox(width: 15),
+              const _OnlinePagination(),
+            ] else ...[
+              const Expanded(
+                child: _LanControls(),
+              ),
+              const SizedBox(width: 15),
+              const _LanPagination(),
+            ],
           ],
         ),
       ),
+    );
+  }
+}
+
+class _OnlinePagination extends StatelessWidget {
+  const _OnlinePagination();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 120,
+      child: BlocBuilder<ServerListCubit, ServerListState>(
+        builder: (context, state) {
+          final pageText = '${state.page ?? 0}/${state.pages ?? 0}';
+
+          return KyberTabBar(
+            selectedIndex: -1,
+            onChanged: (value) {
+              if (value == 0) {
+                context.read<ServerListCubit>().previousPage();
+              } else if (value == 2) {
+                context.read<ServerListCubit>().nextPage();
+              }
+            },
+            tabs: [
+              const Icon(mt.Icons.arrow_back_ios_new_rounded),
+              Text(pageText),
+              const Icon(mt.Icons.arrow_forward_ios_rounded),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LanPagination extends StatelessWidget {
+  const _LanPagination();
+
+  @override
+  Widget build(BuildContext context) {
+    return SizedBox(
+      width: 120,
+      child: BlocBuilder<LanServerListCubit, ServerListState>(
+        builder: (context, state) {
+          final pageText = '${state.page ?? 0}/${state.pages ?? 0}';
+
+          return KyberTabBar(
+            selectedIndex: -1,
+            onChanged: (value) {
+              if (value == 0) {
+                context.read<LanServerListCubit>().previousPage();
+              } else if (value == 2) {
+                context.read<LanServerListCubit>().nextPage();
+              }
+            },
+            tabs: [
+              const Icon(mt.Icons.arrow_back_ios_new_rounded),
+              Text(pageText),
+              const Icon(mt.Icons.arrow_forward_ios_rounded),
+            ],
+          );
+        },
+      ),
+    );
+  }
+}
+
+class _LanControls extends StatelessWidget {
+  const _LanControls();
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    return Row(
+      children: [
+        Expanded(
+          child: KyberInput(
+            placeholder: l10n.text('serverBrowser.searchLanPlaceholder'),
+            onChanged: context.read<LanServerListCubit>().setQuery,
+          ),
+        ),
+        const SizedBox(width: 10),
+        KyberButton(
+          text: l10n.text('common.refresh'),
+          onPressed: () => context.read<LanServerListCubit>().loadServers(),
+        ),
+        const SizedBox(width: 10),
+        KyberButton(
+          text: l10n.text('serverBrowser.directConnect'),
+          onPressed: () async {
+            final result = await showKyberDialog<LanDirectConnectResult?>(
+              context: context,
+              builder: (_) => const LanDirectConnectDialog(),
+            );
+            if (!context.mounted) {
+              return;
+            }
+            if (result == null) {
+              return;
+            }
+
+            final server = LanServerHelper.directConnect(
+              address: result.host,
+              port: result.port,
+              requiresPassword: result.passwordProtected,
+            );
+
+            context.read<ServerBrowserCubit>().selectServer(server);
+            context.read<ServerBrowserCubit>().joinServer(
+              enabledDownload: false,
+            );
+          },
+        ),
+        const SizedBox(width: 10),
+        BlocBuilder<LanServerListCubit, ServerListState>(
+          builder: (context, state) {
+            final loaded = state is ServerListLoaded ? state.servers.length : 0;
+            return Text(
+              l10n.text(
+                'serverBrowser.lanCount',
+                params: {'count': loaded},
+              ),
+              style: const TextStyle(fontFamily: FontFamily.battlefrontUI),
+            );
+          },
+        ),
+      ],
     );
   }
 }
@@ -185,6 +343,7 @@ class _FilterDropdown extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return KyberSearchFilterDropdown(
       onSearchChanged: (value) {
         final filter = context.read<ServerListCubit>().filter;
@@ -199,7 +358,7 @@ class _FilterDropdown extends StatelessWidget {
           return SuperListView(
             children: [
               KyberFilterSection<ServerRegion>(
-                title: 'REGION',
+                title: l10n.text('serverBrowser.filter.region'),
                 selectedItems: [cubit.filter.region],
                 items: toSelectorItems(
                   ServerRegion.values,
@@ -212,7 +371,7 @@ class _FilterDropdown extends StatelessWidget {
                 },
               ),
               KyberFilterSection<ServerType>(
-                title: 'SERVER TYPE',
+                title: l10n.text('serverBrowser.filter.serverType'),
                 selectedItems: [cubit.filter.type],
                 items: toSelectorItems(
                   ServerType.values,
@@ -225,7 +384,7 @@ class _FilterDropdown extends StatelessWidget {
                 },
               ),
               KyberFilterSection<GameType>(
-                title: 'GAME TYPE',
+                title: l10n.text('serverBrowser.filter.gameType'),
                 selectedItems: [cubit.filter.gameType],
                 items: toSelectorItems(
                   GameType.values,
@@ -238,7 +397,7 @@ class _FilterDropdown extends StatelessWidget {
                 },
               ),
               KyberFilterSection<String>(
-                title: 'GAME MODE',
+                title: l10n.text('serverBrowser.filter.gameMode'),
                 selectedItems: cubit.filter.modes,
                 includeAll: true,
                 items: toSelectorItems(
@@ -265,6 +424,7 @@ class _StatusWidget extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return BlocBuilder<LightswitchCubit, LightswitchStatus>(
       builder: (context, apiState) {
         if (apiState.status != KyberStatusEnum.warning) {
@@ -290,7 +450,7 @@ class _StatusWidget extends StatelessWidget {
                       mainAxisAlignment: .center,
                       children: [
                         Text(
-                          'WARNING',
+                          l10n.text('common.warning'),
                           style: .new(
                             fontFamily: FontFamily.battlefrontUI,
                             fontSize: 21,
@@ -319,7 +479,8 @@ class _StatusWidget extends StatelessWidget {
                     children: [
                       Flexible(
                         child: Text(
-                          apiState.message ?? 'Warning message not available.',
+                          apiState.message ??
+                              l10n.text('serverBrowser.warningUnavailable'),
                           style: const TextStyle(
                             fontFamily: FontFamily.battlefrontUI,
                             fontSize: 15,
