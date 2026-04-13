@@ -1,9 +1,10 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:kyber_launcher/core/services/notification_service.dart';
+import 'package:kyber_launcher/core/services/path_launcher_service.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/shared/ui/buttons/button.dart';
 import 'package:kyber_launcher/shared/ui/dialog/kyber_dialog.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 
 class KyberAntiVirusExclusion extends StatefulWidget {
   const KyberAntiVirusExclusion({super.key});
@@ -53,10 +54,14 @@ class _KyberAntiVirusExclusionState extends State<KyberAntiVirusExclusion> {
         ),
         KyberButton(
           text: 'OPEN FOLDER',
-          onPressed: () {
+          onPressed: () async {
             final directory = FileHelper.getArmchairDirectory().path;
 
-            launchUrlString('file://$directory');
+            try {
+              await PathLauncherService.openDirectory(directory);
+            } catch (e) {
+              NotificationService.error(message: 'Failed to open folder: $e');
+            }
           },
         ),
         KyberButton(

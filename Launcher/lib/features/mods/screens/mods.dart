@@ -6,6 +6,8 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
 import 'package:kyber_launcher/core/i18n/localization.dart';
+import 'package:kyber_launcher/core/services/notification_service.dart';
+import 'package:kyber_launcher/core/services/path_launcher_service.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_browser_cubit.dart';
@@ -32,7 +34,6 @@ import 'package:kyber_launcher/shared/ui/elements/filter_dropdown.dart';
 import 'package:kyber_launcher/shared/ui/layout/bordered_content.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
-import 'package:url_launcher/url_launcher_string.dart';
 
 class ModsPage extends StatefulWidget {
   const ModsPage({super.key});
@@ -657,10 +658,14 @@ class _QuickActions extends StatelessWidget {
     );
   }
 
-  void _handleAction(int value) {
+  Future<void> _handleAction(int value) async {
     switch (value) {
       case 0:
-        launchUrlString('file://${ModService.getBasePath()}');
+        try {
+          await PathLauncherService.openDirectory(ModService.getBasePath());
+        } catch (e) {
+          NotificationService.error(message: 'Failed to open mods folder: $e');
+        }
       case 1:
         router.go('/settings?index=1');
       case 2:

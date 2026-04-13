@@ -44,6 +44,24 @@ void ServerManagementAPI::Connect(const std::string& serverId)
     m_webSocket->start();
 }
 
+void ServerManagementAPI::Disconnect()
+{
+    if (!m_serverId.empty() || m_connectionEstablished)
+    {
+        KYBER_LOG(Info, "[Server] Disconnecting from server management gateway");
+    }
+
+    m_connectionEstablished = false;
+    m_serverId.clear();
+    m_webSocket->stop();
+
+    auto queueGuard = m_writeQueue.Lock();
+    while (!queueGuard->empty())
+    {
+        queueGuard->pop();
+    }
+}
+
 void ServerManagementAPI::Send(const ServerManagementAPIEvent& event)
 {
     {

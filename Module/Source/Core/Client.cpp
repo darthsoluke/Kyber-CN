@@ -14,7 +14,6 @@
 
 namespace Kyber
 {
-
 Client::Client()
     : m_joining(false)
     , m_spectator(false)
@@ -348,7 +347,8 @@ void ClientConnectionSendMessageHk(void* inst, Message* message)
 bool ClientInitNetworkHk(__int64 inst, bool singleplayer, bool localhost, bool coop, bool hosted)
 {
     static const auto trampoline = HookManager::Call(ClientInitNetworkHk);
-    KYBER_LOG(Info, "[Client] Client is initializing network, singleplayer: " << singleplayer);
+    KYBER_LOG(Info, "[Client] Client is initializing network, singleplayer: " << singleplayer << ", localhost: " << localhost
+                                                                               << ", hosted: " << hosted);
     if (g_program->m_server->m_runningHosted || strlen(Settings<ClientSettings>("Client")->ServerIp) > 0)
     {
         *reinterpret_cast<void**>(inst + 0xA8) =

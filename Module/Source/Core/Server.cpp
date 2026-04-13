@@ -57,6 +57,11 @@ static uint32_t NormalizeServerPort(uint32_t port)
     return port;
 }
 
+static bool IsLanServerId(const std::string& id)
+{
+    return id.rfind("lan:", 0) == 0;
+}
+
 static bool IsOnlineMode()
 {
     const char* onlineMode = std::getenv("KYBER_ONLINE_MODE");
@@ -66,6 +71,31 @@ static bool IsOnlineMode()
     }
 
     return true;
+}
+
+static bool ShouldUseLocalNetworkPresence()
+{
+    if (g_program == nullptr || g_program->m_server == nullptr || g_program->m_client == nullptr)
+    {
+        return false;
+    }
+
+    if (g_program->m_server->m_onlineMode)
+    {
+        return false;
+    }
+
+    if (g_program->m_server->m_runningHosted || g_program->m_server->m_creationInfo.has_value())
+    {
+        return true;
+    }
+
+    if (!g_program->m_client->m_currentServerId.empty())
+    {
+        return IsLanServerId(g_program->m_client->m_currentServerId);
+    }
+
+    return !g_program->m_client->m_serverIp.empty();
 }
 
 void ServerLoadLevelMessagePostHk(LevelSetup* levelSetup, bool fadeOut, bool forceReloadResources)
@@ -243,6 +273,17 @@ void Server::Start(const ServerCreationInfo& info, bool changeState)
     if (m_lanDiscovery)
     {
         m_lanDiscovery->Start();
+    }
+
+    if (!m_onlineMode)
+    {
+        if (!m_serverId.empty())
+        {
+            KYBER_LOG(Info, "[Server] Starting in offline/LAN mode, clearing previous online registration");
+        }
+
+        m_serverId.clear();
+        g_program->GetAPI()->GetServerManagement()->Disconnect();
     }
 
     g_program->m_server->Register(true);
@@ -519,7 +560,7 @@ void* CreatePresenceBackendHk(__int64* a1, __int64 a2, int backend, __int64 a4, 
     // The game crashes without this, presumably trying to use a
     // Blaze presence backend for dedicated servers or something
     // which has been cooked out
-    if (g_program->m_isDedicatedServer)
+    if (g_program->m_isDedicatedServer || ShouldUseLocalNetworkPresence())
     {
         backend = 0xB8566ABC; // OnlineBackend_Local
         // backend = 0xDEBD4193; // OnlineBackend_Peer
@@ -756,6 +797,7 @@ HookTemplate clientServerHookOffsets[] = {
     { OFFSET_SERVERPLAYER_SETTEAMID, ServerPlayerSetTeamIdHk },
     { OFFSET_APPLY_SETTINGS, SettingsManagerApplyHk },
     { HOOK_OFFSET(0x1478F8440), PresenceBackendManagerAddBackendHk },
+    { HOOK_OFFSET(0x1418D3380), CreatePresenceBackendHk },
     { HOOK_OFFSET(0x1418CA790), LoadSomethingHk },
     //{ HOOK_OFFSET(0x145FE09E0), ProtoHttpControlHk },
     //{ HOOK_OFFSET(0x145FE1920), ProtoHttpPostHk },
@@ -899,6 +941,7 @@ void Server::Stop()
     m_serverInstance = nullptr;
 
     m_serverId.clear();
+    g_program->GetAPI()->GetServerManagement()->Disconnect();
     m_onlineMode = IsOnlineMode();
     if (m_lanDiscovery)
     {

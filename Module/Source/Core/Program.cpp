@@ -638,7 +638,20 @@ void GameSimulationInitHk(GameSimulation* inst, void* createInfo)
 
 const char* GetHostIdHk(__int64 inst)
 {
-    return std::getenv("EALaunchEAID");
+    static std::string offlineHostId;
+
+    if (g_program != nullptr && g_program->m_server != nullptr && !g_program->m_server->m_onlineMode)
+    {
+        if (offlineHostId.empty())
+        {
+            offlineHostId = "KYBER-LAN-" + PlatformUtils::GetEnv("COMPUTERNAME", "HOST");
+        }
+
+        return offlineHostId.c_str();
+    }
+
+    const char* eaId = std::getenv("EALaunchEAID");
+    return eaId != nullptr ? eaId : "KYBER";
 }
 
 const char* GetLocalizedStringInternalHk(const char* inst, const char* id)

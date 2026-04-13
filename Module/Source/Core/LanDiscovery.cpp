@@ -107,7 +107,7 @@ static nlohmann::json BuildLanServerResponse(const Server& server)
         { "onlineMode", onlineMode },
         { "joinable", joinable },
         { "authMode", authMode },
-        { "serverId", server.m_serverId },
+        { "serverId", onlineMode ? server.m_serverId : "" },
         { "mods", mods },
     };
 }

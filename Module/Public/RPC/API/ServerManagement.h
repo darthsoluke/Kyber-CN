@@ -27,6 +27,7 @@ public:
     ServerManagementAPI(const std::string& apiUri, std::string token);
 
     void Connect(const std::string& serverId);
+    void Disconnect();
 
     void SendConsoleMessage(const std::string& message);
     void SendKeepAlive();
