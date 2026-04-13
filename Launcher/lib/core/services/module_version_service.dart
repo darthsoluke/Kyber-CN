@@ -20,6 +20,9 @@ import 'package:win32_registry/win32_registry.dart';
 const _launcherInstallerKey =
     r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\KyberLauncher_is1';
 
+String _bundledModulePath() =>
+    join(dirname(Platform.resolvedExecutable), 'module');
+
 enum VersionModule {
   //launcher,
   module,
@@ -30,7 +33,7 @@ extension VersionModuleExtension on VersionModule {
   Future<String?> getCurrentVersion() async {
     switch (this) {
       case VersionModule.module:
-        final x = File(join(FileHelper.getModuleDirectory().path, 'VERSION'));
+        final x = File(join(_bundledModulePath(), 'VERSION'));
 
         if (!x.existsSync()) {
           return null;
@@ -54,7 +57,7 @@ extension VersionModuleExtension on VersionModule {
           'kyber_launcher_${DateTime.now().millisecondsSinceEpoch}',
         );
       case VersionModule.module:
-        return FileHelper.getModuleDirectory().path;
+        return _bundledModulePath();
     }
   }
 
@@ -71,7 +74,7 @@ extension VersionModuleExtension on VersionModule {
       case VersionModule.installer:
         return [];
       case VersionModule.module:
-        final modulePath = FileHelper.getModuleDirectory().path;
+        final modulePath = _bundledModulePath();
         return [
           '$modulePath/vivoxsdk.dll',
           '$modulePath/VanillaBundleAggregation.kb',
@@ -96,7 +99,6 @@ class ModuleVersionService {
 
   Directory get _bundledModuleDirectory =>
       Directory(join(dirname(Platform.resolvedExecutable), 'module'));
-  Directory get _runtimeModuleDirectory => FileHelper.getModuleDirectory();
   File get _bundledModuleArchive =>
       File(join(_bundledModuleDirectory.path, 'kyber-module.zip'));
 
@@ -157,51 +159,22 @@ class ModuleVersionService {
     return required.every((path) => File(path).existsSync());
   }
 
+  String? _readModuleVersionSync(String modulePath) {
+    final versionFile = File(join(modulePath, 'VERSION'));
+    if (!versionFile.existsSync()) {
+      return null;
+    }
+
+    final value = versionFile.readAsStringSync().trim();
+    return value.isEmpty ? null : value;
+  }
+
   bool hasBundledModule({bool requireModSupport = true}) {
     return _hasModuleFiles(
           _bundledModuleDirectory.path,
           requireModSupport: requireModSupport,
         ) ||
         _bundledModuleArchive.existsSync();
-  }
-
-  Future<void> _copyBundledModuleFiles(
-    Directory sourceDir,
-    Directory targetDir, {
-    required bool requireModSupport,
-  }) async {
-    final fileNames = <String>[
-      'Kyber.dll',
-      'vivoxsdk.dll',
-      'ca_root.pem',
-      if (requireModSupport) 'VanillaBundleAggregation.kb',
-      'VERSION',
-      'kyber-module.zip',
-    ];
-
-    if (!targetDir.existsSync()) {
-      targetDir.createSync(recursive: true);
-    }
-
-    _prepareModuleDirectoryForOverwrite(
-      targetDir.path,
-      includeModFiles: requireModSupport,
-    );
-
-    for (final fileName in fileNames) {
-      final sourceFile = File(join(sourceDir.path, fileName));
-      if (!sourceFile.existsSync()) {
-        continue;
-      }
-
-      final targetFile = File(join(targetDir.path, fileName));
-      if (targetFile.existsSync()) {
-        _tryClearReadOnly(targetFile.path);
-        targetFile.deleteSync();
-      }
-
-      sourceFile.copySync(targetFile.path);
-    }
   }
 
   Future<bool> installBundledModuleIfAvailable({
@@ -212,51 +185,50 @@ class ModuleVersionService {
       return false;
     }
 
-    final targetDir = isStandalone() ? sourceDir : _runtimeModuleDirectory;
-    if (_hasModuleFiles(targetDir.path, requireModSupport: requireModSupport)) {
-      return true;
-    }
-
-    final sourceHasFiles = _hasModuleFiles(
-      sourceDir.path,
-      requireModSupport: requireModSupport,
-    );
-
-    if (!sourceHasFiles && !_bundledModuleArchive.existsSync()) {
+    if (!_hasModuleFiles(
+          sourceDir.path,
+          requireModSupport: requireModSupport,
+        ) &&
+        !_bundledModuleArchive.existsSync()) {
       return false;
     }
 
-    if (!targetDir.existsSync()) {
-      targetDir.createSync(recursive: true);
+    if (!sourceDir.existsSync()) {
+      sourceDir.createSync(recursive: true);
     }
 
-    if (sourceHasFiles && sourceDir.path != targetDir.path) {
-      await _copyBundledModuleFiles(
-        sourceDir,
-        targetDir,
-        requireModSupport: requireModSupport,
-      );
-    } else if (_bundledModuleArchive.existsSync()) {
+    if (_hasModuleFiles(
+      sourceDir.path,
+      requireModSupport: requireModSupport,
+    )) {
+      return true;
+    }
+
+    if (_bundledModuleArchive.existsSync()) {
       _prepareModuleDirectoryForOverwrite(
-        targetDir.path,
+        sourceDir.path,
         includeModFiles: requireModSupport,
       );
       await extract(
         filePath: _bundledModuleArchive.path,
-        targetDir: targetDir.path,
+        targetDir: sourceDir.path,
       );
+      final bundledVersion = _readModuleVersionSync(sourceDir.path);
+      if (bundledVersion != null) {
+        File(join(sourceDir.path, 'VERSION')).writeAsStringSync(bundledVersion);
+      }
       _prepareModuleDirectoryForOverwrite(
-        targetDir.path,
+        sourceDir.path,
         includeModFiles: requireModSupport,
       );
     }
 
     final prepared = _hasModuleFiles(
-      targetDir.path,
+      sourceDir.path,
       requireModSupport: requireModSupport,
     );
     if (prepared) {
-      _logger.info('Prepared bundled module in ${targetDir.path}');
+      _logger.info('Prepared bundled module in ${sourceDir.path}');
     }
 
     return prepared;
@@ -264,7 +236,7 @@ class ModuleVersionService {
 
   bool hasLaunchableModule({bool requireModSupport = true}) {
     return _hasModuleFiles(
-      FileHelper.getModuleDirectory().path,
+      _bundledModuleDirectory.path,
       requireModSupport: requireModSupport,
     );
   }
@@ -272,22 +244,13 @@ class ModuleVersionService {
   Future<String> getLaunchModuleDirectory({
     bool requireModSupport = true,
   }) async {
-    if (_hasModuleFiles(
-      _runtimeModuleDirectory.path,
-      requireModSupport: requireModSupport,
-    )) {
-      return _runtimeModuleDirectory.path;
-    }
-
     if (await installBundledModuleIfAvailable(
       requireModSupport: requireModSupport,
     )) {
-      return isStandalone()
-          ? _bundledModuleDirectory.path
-          : _runtimeModuleDirectory.path;
+      return _bundledModuleDirectory.path;
     }
 
-    return _runtimeModuleDirectory.path;
+    return _bundledModuleDirectory.path;
   }
 
   Future<String> getRuntimeVersion({
