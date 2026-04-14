@@ -12,7 +12,10 @@ class EnvHelper {
       throw Exception('PATH environment variable is not set');
     }
 
-    final newPath = '$path;${customPath ?? FileHelper.getModuleDirectory().path}';
+    final modulePath = customPath ?? FileHelper.getModuleDirectory().path;
+    Env.set('KYBER_MODULE_DIR', modulePath);
+
+    final newPath = '$path;$modulePath';
     Env.set('PATH', newPath);
   }
 }

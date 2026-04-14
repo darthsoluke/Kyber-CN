@@ -17,8 +17,20 @@ import 'package:rhttp/rhttp.dart';
 import 'package:win32/win32.dart';
 import 'package:win32_registry/win32_registry.dart';
 
-const _launcherInstallerKey =
-    r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\KyberLauncher_is1';
+const _launcherInstallerRegistryPaths = <(RegistryHive, String)>[
+  (
+    RegistryHive.currentUser,
+    r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\KyberLauncher_is1',
+  ),
+  (
+    RegistryHive.localMachine,
+    r'SOFTWARE\WOW6432Node\Microsoft\Windows\CurrentVersion\Uninstall\KyberLauncher_is1',
+  ),
+  (
+    RegistryHive.localMachine,
+    r'SOFTWARE\Microsoft\Windows\CurrentVersion\Uninstall\KyberLauncher_is1',
+  ),
+];
 
 String _bundledModulePath() =>
     join(dirname(Platform.resolvedExecutable), 'module');
@@ -159,14 +171,34 @@ class ModuleVersionService {
     return required.every((path) => File(path).existsSync());
   }
 
-  String? _readModuleVersionSync(String modulePath) {
-    final versionFile = File(join(modulePath, 'VERSION'));
-    if (!versionFile.existsSync()) {
-      return null;
+  Map<String, List<int>> _captureBundledOverrides(String modulePath) {
+    final overrides = <String, List<int>>{};
+    for (final name in [
+      'Kyber.dll',
+      'vivoxsdk.dll',
+      'ca_root.pem',
+      'VERSION',
+    ]) {
+      final file = File(join(modulePath, name));
+      if (!file.existsSync()) {
+        continue;
+      }
+
+      overrides[name] = file.readAsBytesSync();
     }
 
-    final value = versionFile.readAsStringSync().trim();
-    return value.isEmpty ? null : value;
+    return overrides;
+  }
+
+  void _restoreBundledOverrides(
+    String modulePath,
+    Map<String, List<int>> overrides,
+  ) {
+    for (final entry in overrides.entries) {
+      final file = File(join(modulePath, entry.key));
+      _tryClearReadOnly(file.path);
+      file.writeAsBytesSync(entry.value, flush: true);
+    }
   }
 
   bool hasBundledModule({bool requireModSupport = true}) {
@@ -205,6 +237,7 @@ class ModuleVersionService {
     }
 
     if (_bundledModuleArchive.existsSync()) {
+      final preservedOverrides = _captureBundledOverrides(sourceDir.path);
       _prepareModuleDirectoryForOverwrite(
         sourceDir.path,
         includeModFiles: requireModSupport,
@@ -213,9 +246,8 @@ class ModuleVersionService {
         filePath: _bundledModuleArchive.path,
         targetDir: sourceDir.path,
       );
-      final bundledVersion = _readModuleVersionSync(sourceDir.path);
-      if (bundledVersion != null) {
-        File(join(sourceDir.path, 'VERSION')).writeAsStringSync(bundledVersion);
+      if (preservedOverrides.isNotEmpty) {
+        _restoreBundledOverrides(sourceDir.path, preservedOverrides);
       }
       _prepareModuleDirectoryForOverwrite(
         sourceDir.path,
@@ -281,27 +313,29 @@ class ModuleVersionService {
   }
 
   bool isStandalone() {
-    RegistryKey? key;
     try {
-      key = Registry.openPath(
-        RegistryHive.localMachine,
-        path: _launcherInstallerKey,
-      );
+      for (final (hive, path) in _launcherInstallerRegistryPaths) {
+        RegistryKey? key;
+        try {
+          key = Registry.openPath(hive, path: path);
+          final installationPath = key.getStringValue('InstallLocation');
+          if (installationPath == null || installationPath.trim().isEmpty) {
+            continue;
+          }
 
-      final installationPath = key.getStringValue('InstallLocation');
-      if (installationPath == null) {
-        return true;
+          return normalize(installationPath) !=
+              dirname(Platform.resolvedExecutable);
+        } on WindowsException {
+          continue;
+        } finally {
+          key?.close();
+        }
       }
 
-      return normalize(installationPath) !=
-          dirname(Platform.resolvedExecutable);
-    } on WindowsException catch (_) {
       return true;
     } catch (e) {
       _logger.warning('Failed to check if standalone: $e');
       return false;
-    } finally {
-      key?.close();
     }
   }
 

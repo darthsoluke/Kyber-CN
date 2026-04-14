@@ -114,12 +114,16 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
 
       if (topLevelResults.command != null &&
           !topLevelResults.arguments.contains('--help')) {
+        final commandName = topLevelResults.command!.name;
+        final moduleDirOverride = switch (commandName) {
+          'start_server' ||
+          'start_game' => topLevelResults.command!['module-path'] as String?,
+          _ => null,
+        };
+
         if (!topLevelResults.arguments.contains('--skip-updates') &&
             !Platform.isLinux &&
-            [
-              'start_server',
-              'start_game',
-            ].contains(topLevelResults.command!.name)) {
+            ['start_server', 'start_game'].contains(commandName)) {
           final userBranch =
               (Platform.environment['KYBER_MODULE_CHANNEL'] ??
                       topLevelResults.command!['module-branch'])
@@ -136,7 +140,10 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
               .versions(rq);
           final latestVersion = versions.versions.firstWhere((x) => x.isLatest);
           final currentVersionFile = File(
-            join(FileHelper.getModuleDirectory().path, 'VERSION'),
+            join(
+              moduleDirOverride ?? FileHelper.getModuleDirectory().path,
+              'VERSION',
+            ),
           );
 
           var needsUpdate = false;
@@ -164,7 +171,8 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
                 );
 
             final filename = basename(download.url).split('?').first;
-            final downloadDir = FileHelper.getModuleDirectory().path;
+            final downloadDir =
+                moduleDirOverride ?? FileHelper.getModuleDirectory().path;
             final downloadPath = join(downloadDir, filename);
             _logger.info('Downloading to $downloadPath');
             await Dio().download(download.url, downloadPath);

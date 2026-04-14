@@ -5,10 +5,6 @@
 #define AppId "KyberLauncher"
 #define MyAppExeName "kyber_launcher.exe"
 
-[Dirs]
-Name: "{commonappdata}\Kyber"; Permissions: users-modify
-Name: "{commonappdata}\Kyber\Module"; Permissions: users-modify
-
 [Setup]
 AppId={#AppId}
 AppName={#MyAppName}
@@ -17,7 +13,8 @@ AppPublisher={#MyAppPublisher}
 AppPublisherURL={#MyAppURL}
 AppSupportURL={#MyAppURL}
 AppUpdatesURL={#MyAppURL}
-DefaultDirName={autopf}\{#MyAppName}
+DefaultDirName={localappdata}\Programs\{#MyAppName}
+PrivilegesRequired=lowest
 DisableProgramGroupPage=yes
 SetupIconFile=../windows/runner/resources/app_icon.ico
 OutputDir=./
@@ -28,10 +25,10 @@ DisableWelcomePage=no
 WizardStyle=modern
 
 [Registry]
-Root: HKCR; Subkey: ".kbcollection"; ValueType: string; ValueName: ""; ValueData: "{#AppId}.kmodfile"; Flags: uninsdeletevalue
-Root: HKCR; Subkey: "{#AppId}.kbcollection"; ValueType: string; ValueName: ""; ValueData: "Kyber Collection File"; Flags: uninsdeletekey
-Root: HKCR; Subkey: "{#AppId}.kbcollection\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Flags: uninsdeletekey
-Root: HKCR; Subkey: "{#AppId}.kbcollection\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
+Root: HKA; Subkey: ".kbcollection"; ValueType: string; ValueName: ""; ValueData: "{#AppId}.kmodfile"; Flags: uninsdeletevalue
+Root: HKA; Subkey: "{#AppId}.kbcollection"; ValueType: string; ValueName: ""; ValueData: "Kyber Collection File"; Flags: uninsdeletekey
+Root: HKA; Subkey: "{#AppId}.kbcollection\DefaultIcon"; ValueType: string; ValueName: ""; ValueData: "{app}\{#MyAppExeName},0"; Flags: uninsdeletekey
+Root: HKA; Subkey: "{#AppId}.kbcollection\shell\open\command"; ValueType: string; ValueName: ""; ValueData: """{app}\{#MyAppExeName}"" ""%1"""; Flags: uninsdeletekey
 
 [Languages]
 Name: "english"; MessagesFile: "compiler:Default.isl"
