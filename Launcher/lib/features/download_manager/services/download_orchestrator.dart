@@ -41,21 +41,14 @@ class ProgressUpdate {
 @pragma('vm:entry-point')
 Future<Task?> _onTaskStart(Task task) async {
   try {
-    // Prefer a bundled module (portable Release) first, then fall back to the
-    // global module directory.
     final localCa = File(
       join(dirname(Platform.resolvedExecutable), 'module', 'ca_root.pem'),
     );
-    final globalCa = File(
-      join(FileHelper.getModuleDirectory().path, 'ca_root.pem'),
-    );
-
-    final caFile = localCa.existsSync() ? localCa : globalCa;
-    if (!caFile.existsSync()) {
+    if (!localCa.existsSync()) {
       return task;
     }
 
-    final certificate = caFile.readAsBytesSync();
+    final certificate = localCa.readAsBytesSync();
     SecurityContext.defaultContext.setTrustedCertificatesBytes(certificate);
   } catch (_) {
     // Don't fail the download task if the certificate file is missing or unreadable.

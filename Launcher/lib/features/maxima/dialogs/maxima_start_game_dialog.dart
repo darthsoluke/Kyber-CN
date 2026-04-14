@@ -69,84 +69,31 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
       final req = widget.initializeRequest ?? .new();
       final moduleVersionService = ModuleVersionService();
       final requiresModSupport = _requiresModuleModSupport(req);
-      var hasBundledModule = false;
       try {
-        hasBundledModule = await moduleVersionService
-            .installBundledModuleIfAvailable(
-              requireModSupport: requiresModSupport,
-            );
+        await moduleVersionService.installBundledModuleIfAvailable(
+          requireModSupport: requiresModSupport,
+        );
       } catch (e, st) {
         Logger.root.warning(
-          'Failed to install bundled module. Falling back to update check.',
+          'Failed to prepare bundled module.',
           e,
           st,
         );
       }
-      final isOfflineLanNoMods =
-          _isOfflineLanServerLaunch(req) && !requiresModSupport;
-      final canUseLocalLanModule =
-          isOfflineLanNoMods &&
-          moduleVersionService.hasLaunchableModule(requireModSupport: false);
-      var shouldUpdateModule = false;
-      if (hasBundledModule) {
-        shouldUpdateModule = false;
-      } else if (canUseLocalLanModule) {
-        try {
-          shouldUpdateModule = await moduleVersionService.updateAvailable(
-            module: VersionModule.module,
-          );
-        } catch (e, st) {
-          Logger.root.warning(
-            'Failed to check for module updates during offline LAN launch. '
-            'Using local module instead.',
-            e,
-            st,
-          );
-        }
-      } else {
-        shouldUpdateModule = await moduleVersionService.updateAvailable(
-          module: VersionModule.module,
+
+      final hasBundledModule = moduleVersionService.hasLaunchableModule(
+        requireModSupport: requiresModSupport,
+      );
+      if (!hasBundledModule) {
+        const message =
+            'Bundled Kyber module is missing or incomplete. Please re-extract the full Release package.';
+        Logger.root.severe(message);
+        NotificationService.showNotification(
+          message: message,
+          severity: InfoBarSeverity.error,
         );
-      }
-
-      if (shouldUpdateModule) {
-        try {
-          setState(() => updating = true);
-
-          await moduleVersionService.updateVersion(
-            module: VersionModule.module,
-          );
-
-          if (!mounted) {
-            return;
-          }
-
-          setState(() => updating = false);
-        } catch (e, st) {
-          if (mounted) {
-            setState(() => updating = false);
-          }
-
-          final message = switch (e) {
-            AnyhowException() => e.message,
-            PanicException() => e.message,
-            _ => e.toString(),
-          };
-
-          Logger.root.severe('Failed to update Kyber Module', e, st);
-          await Sentry.captureException(e, stackTrace: st);
-          NotificationService.showNotification(
-            message: Localization.current.text(
-              'maxima.failedToUpdateModule',
-              params: {'message': message},
-            ),
-            severity: InfoBarSeverity.error,
-          );
-
-          Navigator.of(context).pop();
-
-          return;
-        }
+        Navigator.of(context).pop();
+        return;
       }
 
       if (Preferences.general.enabledPreloadMods) {

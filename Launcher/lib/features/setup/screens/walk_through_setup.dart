@@ -16,7 +16,8 @@ import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/mods/services/mod_service.dart';
 import 'package:kyber_launcher/features/navigation_bar/providers/status_cubit.dart';
 import 'package:kyber_launcher/features/navigation_bar/widgets/action_bar.dart';
-import 'package:kyber_launcher/features/navigation_bar/widgets/title_bar.dart' as kl;
+import 'package:kyber_launcher/features/navigation_bar/widgets/title_bar.dart'
+    as kl;
 import 'package:kyber_launcher/features/setup/widgets/setup_container.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
@@ -41,8 +42,7 @@ class _WalkThroughSetupState extends State<WalkThroughSetup> {
   void initState() {
     Preferences.general.modsPath = FileHelper.getModsDirectory().path;
     Timer.run(() => BlocProvider.of<DownloadCubit>(context));
-
-    ModuleVersionService().updateVersion(module: VersionModule.module);
+    unawaited(ModuleVersionService().installBundledModuleIfAvailable());
 
     super.initState();
   }

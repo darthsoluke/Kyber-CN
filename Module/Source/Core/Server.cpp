@@ -419,7 +419,7 @@ __int64 ServerCtorHk(void* inst, ServerSpawnInfo& info, SocketManager* socketMan
         return trampoline(inst, info, socketManager);
     }
 
-    info.isLocalHost = false;
+    info.isLocalHost = !g_program->m_isDedicatedServer && ShouldUseLocalNetworkPresence();
 
     if (g_program->m_isDedicatedServer)
     {

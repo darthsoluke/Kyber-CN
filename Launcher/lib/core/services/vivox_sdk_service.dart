@@ -9,6 +9,7 @@ import 'package:flutter/foundation.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/core.dart';
+import 'package:kyber_launcher/core/services/module_version_service.dart';
 import 'package:kyber_launcher/core/services/voip_service.dart';
 import 'package:kyber_launcher/gen/generated_bindings.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -31,7 +32,9 @@ class VivoxService with ChangeNotifier {
   }
 
   Future<VivoxService> getInstance() async {
-    final moduleDir = FileHelper.getModuleDirectory().path;
+    final moduleDir = await ModuleVersionService().getLaunchModuleDirectory(
+      requireModSupport: false,
+    );
 
     if (!kDebugMode && Platform.isMacOS) {
       return this;
