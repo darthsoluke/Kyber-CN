@@ -419,7 +419,9 @@ __int64 ServerCtorHk(void* inst, ServerSpawnInfo& info, SocketManager* socketMan
         return trampoline(inst, info, socketManager);
     }
 
-    info.isLocalHost = !g_program->m_isDedicatedServer && ShouldUseLocalNetworkPresence();
+    // Hosted LAN/offline sessions should still bind to a network-reachable address.
+    // isLocalHost affects the engine's socket binding behavior, not just presence.
+    info.isLocalHost = false;
 
     if (g_program->m_isDedicatedServer)
     {
