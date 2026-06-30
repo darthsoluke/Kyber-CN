@@ -30,6 +30,10 @@ func (c *DiscordAuthCache) key(state string) string {
 }
 
 func (c *DiscordAuthCache) Get(ctx context.Context, state string) (*string, error) {
+	if c == nil || c.rdb == nil {
+		return nil, errors.New("discord auth cache is not configured")
+	}
+
 	data, err := c.rdb.Get(ctx, c.key(state)).Bytes()
 
 	if errors.Is(err, redis.Nil) {
@@ -47,6 +51,10 @@ func (c *DiscordAuthCache) Get(ctx context.Context, state string) (*string, erro
 }
 
 func (c *DiscordAuthCache) Set(ctx context.Context, state string, token string) error {
+	if c == nil || c.rdb == nil {
+		return errors.New("discord auth cache is not configured")
+	}
+
 	key := c.key(state)
 
 	if err := c.rdb.Set(ctx, key, token, c.ttl).Err(); err != nil {

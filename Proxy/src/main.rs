@@ -1,6 +1,11 @@
+use jsonwebtoken::{decode, decode_header, Algorithm, Validation};
+use jwks::JwksManager;
 use log::{debug, error, info, warn};
+use serde::{Deserialize, Serialize};
 use std::env;
 use std::error::Error;
+use std::sync::Arc;
+use std::time::{Duration, Instant};
 use tokio::net::{TcpListener, TcpStream};
 use tokio::sync::mpsc;
 use tokio_tungstenite::{
@@ -11,17 +16,10 @@ use tokio_tungstenite::{
     },
 };
 use user_manager::UserManager;
-use std::time::{Duration, Instant};
-use jsonwebtoken::{decode, decode_header, Validation, Algorithm};
-use serde::{Deserialize, Serialize};
-use percent_encoding::percent_decode_str;
-use jwks::JwksManager;
-use std::sync::Arc;
 
-mod grpc_client;
+mod jwks;
 mod user_manager;
 mod utils;
-mod jwks;
 
 use futures_util::{SinkExt, StreamExt};
 
@@ -40,7 +38,10 @@ struct Claims {
     extra: serde_json::Map<String, serde_json::Value>,
 }
 
-async fn validate_jwt_token(token: &str, jwks_manager: &JwksManager) -> Result<Claims, Box<dyn Error + Send + Sync>> {
+async fn validate_jwt_token(
+    token: &str,
+    jwks_manager: &JwksManager,
+) -> Result<Claims, Box<dyn Error + Send + Sync>> {
     let header = decode_header(token)?;
 
     let kid = header.kid.ok_or_else(|| -> Box<dyn Error + Send + Sync> {
@@ -61,25 +62,34 @@ async fn validate_jwt_token(token: &str, jwks_manager: &JwksManager) -> Result<C
 async fn main() -> Result<(), Box<dyn Error>> {
     env_logger::init();
 
-    let _guard = sentry::init(("https://0745df5853f871d9ecde75645138a019@sentry.kyber.gg/9", sentry::ClientOptions {
-        release: sentry::release_name!(),
-        send_default_pii: true,
-        ..Default::default()
-    }));
+    let _guard = sentry::init((
+        "https://0745df5853f871d9ecde75645138a019@sentry.kyber.gg/9",
+        sentry::ClientOptions {
+            release: sentry::release_name!(),
+            send_default_pii: true,
+            ..Default::default()
+        },
+    ));
 
     let server_ip = env::var("SERVER_IP").unwrap_or_else(|_| "0.0.0.0".to_string());
     let server_port = env::var("SERVER_PORT").unwrap_or_else(|_| "8080".to_string());
     let addr = format!("{}:{}", server_ip, server_port);
 
-    let jwks_url = env::var("JWKS_URL").unwrap();
+    let jwks_url = env::var("JWKS_URL")
+        .map_err(|_| "JWKS_URL environment variable is required, e.g. https://api.example.com/.well-known/jwks.json")?;
     let jwks_manager = Arc::new(JwksManager::new(jwks_url.clone()));
 
     info!("Pre-fetching JWKS from {}", jwks_url);
     jwks_manager.refresh_jwks_safe().await;
 
     let refresh_interval = Duration::from_secs(3600);
-    jwks_manager.clone().start_periodic_refresh(refresh_interval);
-    info!("Started periodic JWKS refresh (every {} seconds)", refresh_interval.as_secs());
+    jwks_manager
+        .clone()
+        .start_periodic_refresh(refresh_interval);
+    info!(
+        "Started periodic JWKS refresh (every {} seconds)",
+        refresh_interval.as_secs()
+    );
 
     let socket = TcpListener::bind(&addr).await?;
     info!("Listening on: {}", socket.local_addr()?);
@@ -98,7 +108,11 @@ async fn main() -> Result<(), Box<dyn Error>> {
     Ok(())
 }
 
-async fn accept_connection(stream: TcpStream, user_manager: UserManager, jwks_manager: Arc<JwksManager>) {
+async fn accept_connection(
+    stream: TcpStream,
+    user_manager: UserManager,
+    jwks_manager: Arc<JwksManager>,
+) {
     if stream.set_nodelay(true).is_err() {
         warn!("Failed to set nodelay on stream, closing");
         return;
@@ -176,8 +190,7 @@ async fn accept_connection(stream: TcpStream, user_manager: UserManager, jwks_ma
         }
     };
 
-    let server_id = claims.server_id.as_deref()
-        .filter(|s| !s.is_empty());
+    let server_id = claims.server_id.as_deref().filter(|s| !s.is_empty());
     if server_id.is_none() {
         warn!("No server_id found in JWT claims");
         ws_stream.close(None).await.ok();
@@ -208,14 +221,6 @@ async fn accept_connection(stream: TcpStream, user_manager: UserManager, jwks_ma
 
         let mut server = server.unwrap();
 
-        let converted_token = user_manager.convert_token(&token);
-        let existing_user = user_manager.get_user_by_id(converted_token);
-        if let Some(user) = existing_user {
-            warn!("User with token already connected: {}", converted_token);
-            let _ = user.cancel_token.send(());
-            user_manager.remove_user(converted_token);
-        }
-
         let (mut write, mut read) = ws_stream.split();
         let (tx, mut rx) = mpsc::unbounded_channel();
         let (cancel_tx, _cancel_rx) = mpsc::unbounded_channel();
@@ -228,7 +233,7 @@ async fn accept_connection(stream: TcpStream, user_manager: UserManager, jwks_ma
                         if msg.is_binary() || msg.is_text() {
                             let modified_packet = prepend_identifier(&msg.into_data(), user_id);
                             let result = server.sender.send(Message::binary(modified_packet.clone()));
-                            if let Err(err) = result {
+                            if result.is_err() {
                                 let new_server = user_manager.get_server_by_id(server_id);
                                 if new_server.is_none() {
                                     if server_disconnect_time.is_none() {
@@ -276,7 +281,10 @@ async fn accept_connection(stream: TcpStream, user_manager: UserManager, jwks_ma
             warn!("Server already exists for id {}, overwriting", server_id);
 
             if let Err(err) = server.cancel_token.send(()) {
-                error!("Failed to cancel connection for server {}: {}", server_id, err);
+                error!(
+                    "Failed to cancel connection for server {}: {}",
+                    server_id, err
+                );
             }
         }
 

@@ -27,6 +27,7 @@
 #include <ixwebsocket/IXNetSystem.h>
 
 #include <cstdio>
+#include <fstream>
 #include <stdlib.h>
 #include <string.h>
 #include <thread>
@@ -63,6 +64,24 @@ TL_DECLARE_FUNC(0x14131AB20, void*, DirtySockSocketManager_ctor, void* inst, Mem
 
 Program* g_program;
 
+static void EarlyTrace(const char* message)
+{
+    const char* path = std::getenv("KYBER_EARLY_TRACE");
+    if (path == nullptr || path[0] == '\0')
+    {
+        return;
+    }
+
+    HANDLE file = CreateFileA(path, FILE_APPEND_DATA, FILE_SHARE_READ | FILE_SHARE_WRITE, nullptr, OPEN_ALWAYS, FILE_ATTRIBUTE_NORMAL, nullptr);
+    if (file != INVALID_HANDLE_VALUE)
+    {
+        DWORD written = 0;
+        WriteFile(file, message, static_cast<DWORD>(strlen(message)), &written, nullptr);
+        WriteFile(file, "\r\n", 2, &written, nullptr);
+        CloseHandle(file);
+    }
+}
+
 Program::Program(HMODULE module)
     : m_module(module)
     , m_api(nullptr)
@@ -77,12 +96,16 @@ Program::Program(HMODULE module)
     , m_isDedicatedServer(false)
     , m_messageDebugEnabled(false)
 {
+    EarlyTrace("program.ctor.begin");
     if (g_program || MH_Initialize() != MH_OK)
     {
+        EarlyTrace("program.ctor.mh_initialize.failed");
         ErrorUtils::ThrowException("Initialization failed. Please restart Battlefront and try again.");
     }
 
+    EarlyTrace("program.ctor.thread.before");
     new std::thread(&Program::InitializationThread, this);
+    EarlyTrace("program.ctor.thread.after");
 }
 
 Program::~Program()
@@ -129,12 +152,18 @@ void MainInitHk()
 
 void Program::InitializationThread()
 {
+    EarlyTrace("initialization_thread.begin");
     HookManager::CreateHook(HOOK_OFFSET(0x1401898A0), MainInitHk);
+    EarlyTrace("initialization_thread.main_init_hook.created");
     Hook::ApplyQueuedActions();
+    EarlyTrace("initialization_thread.initial_hooks.applied");
 
+    EarlyTrace("initialization_thread.sentry.before");
     Sentry::Initialize();
+    EarlyTrace("initialization_thread.sentry.after");
 
     InitializeEASTL();
+    EarlyTrace("initialization_thread.eastl.after");
 
     bool hideConsole = std::getenv("KYBER_HIDE_CONSOLE") != nullptr;
     bool hideConsoleVisually = std::getenv("KYBER_HIDE_CONSOLE_WINDOW") != nullptr;
@@ -196,6 +225,7 @@ void Program::InitializationThread()
     spdlog::level::level_enum level = DecideLogLevel();
     spdlog::set_level(level);
     spdlog::flush_on(level);
+    EarlyTrace("initialization_thread.logger.ready");
 
     for (int i = 0; i < sizeof(kLogoArt) / sizeof(*kLogoArt); i++)
     {
@@ -506,6 +536,7 @@ bool MainLoopInitHk(MainLoop* inst)
     {
         inst->isDedicatedServer = true;
     }
+    KYBER_LOG(Info, "LAN_STAGE[engine.mainloop.init] dedicated=" << g_program->m_isDedicatedServer);
 
     g_program->InitializeConsole();
 
@@ -518,6 +549,7 @@ bool MainLoopInitHk(MainLoop* inst)
     bool result = trampoline(inst);
 
     KYBER_LOG(Info, "[Engine] Processing initial events");
+    KYBER_LOG(Info, "LAN_STAGE[engine.mainloop.initial_events]");
     g_program->m_client->ProcessPendingJoin();
 
     if (g_program->m_settingsManager != nullptr)
@@ -551,10 +583,12 @@ void GameSimulationSpawnServerHk(void* inst, ServerSpawnInfo& createInfo)
 void GameSimulationInitDedicatedServerHk(void* inst, void* createInfo)
 {
     KYBER_LOG(Info, "[GameSim] Initializing Dedicated Server");
+    KYBER_LOG(Info, "LAN_STAGE[dedicated.init.start]");
 
     if (!g_program->m_server->m_creationInfo)
     {
         KYBER_LOG(Error, "[GameSim] Failed to find server creation info; halting");
+        KYBER_LOG(Error, "LAN_STAGE[dedicated.init.failed] reason=missing_creation_info");
         return;
     }
 
@@ -564,27 +598,46 @@ void GameSimulationInitDedicatedServerHk(void* inst, void* createInfo)
         if (g_program->m_server->m_socketManager == nullptr)
         {
             KYBER_LOG(Error, "[GameSim] Failed to allocate socket manager; halting");
+            KYBER_LOG(Error, "LAN_STAGE[dedicated.init.failed] reason=socket_manager_alloc");
             return;
         }
 
         DirtySockSocketManager_ctor(g_program->m_server->m_socketManager, FB_STATIC_ARENA, 1168);
+        KYBER_LOG(Info, "LAN_STAGE[dedicated.socket_manager.created] dirtysock=1");
     }
 
     const ServerCreationInfo& serverInfo = g_program->m_server->m_creationInfo.value();
+    KYBER_LOG(Info, "LAN_STAGE[dedicated.creation_info.loaded] onlineMode=" << g_program->m_server->m_onlineMode
+                                                                             << " port=" << serverInfo.port
+                                                                             << " level=" << serverInfo.level
+                                                                             << " mode=" << serverInfo.mode
+                                                                             << " passwordPresent=" << !serverInfo.password.empty());
 
     g_program->m_server->ApplyRuntimeSettings(serverInfo);
     g_program->m_server->m_heartbeatTimer = 0.f;
-    if (g_program->m_server->m_lanDiscovery)
+    if (!g_program->m_server->m_onlineMode && g_program->m_server->m_lanDiscovery)
     {
+        KYBER_LOG(Info, "LAN_STAGE[dedicated.discovery.decision] action=start reason=offline_lan");
         g_program->m_server->m_lanDiscovery->Start();
+    }
+    else if (g_program->m_server->m_onlineMode && g_program->m_server->m_lanDiscovery)
+    {
+        KYBER_LOG(Info, "LAN_STAGE[dedicated.discovery.decision] action=stop reason=online_mode");
+        g_program->m_server->m_lanDiscovery->Stop();
     }
 
     if (g_program->m_server->m_onlineMode)
     {
+        KYBER_LOG(Info, "LAN_STAGE[dedicated.registration.dispatch]");
         g_program->m_server->Register();
+    }
+    else
+    {
+        KYBER_LOG(Info, "LAN_STAGE[dedicated.registration.skip] reason=offline_lan");
     }
 
     g_program->m_server->m_socketSpawnInfo = SocketSpawnInfo(false, "", g_program->m_server->m_serverId, "");
+    KYBER_LOG(Info, "LAN_STAGE[dedicated.socket_info] serverName=" << g_program->m_server->m_serverId);
 
     LevelSetup levelSetup;
     InitLevelSetup(&levelSetup, serverInfo.level.c_str(), serverInfo.mode.c_str(), "", "");
@@ -598,6 +651,8 @@ void GameSimulationInitDedicatedServerHk(void* inst, void* createInfo)
     spawnInfo.isDedicated = true;
     spawnInfo.serverPort = serverInfo.port;
     spawnInfo.saveData.init(0);
+    KYBER_LOG(Info, "LAN_STAGE[dedicated.spawn] level=" << serverInfo.level << " mode=" << serverInfo.mode
+                                                         << " port=" << spawnInfo.serverPort << " isLocalHost=" << spawnInfo.isLocalHost);
     GameSimulationSpawnServerHk(inst, spawnInfo);
 }
 
@@ -645,6 +700,7 @@ const char* GetHostIdHk(__int64 inst)
         if (offlineHostId.empty())
         {
             offlineHostId = "KYBER-LAN-" + PlatformUtils::GetEnv("COMPUTERNAME", "HOST");
+            KYBER_LOG(Info, "LAN_STAGE[identity.offline_host_id.created] id=" << offlineHostId);
         }
 
         return offlineHostId.c_str();

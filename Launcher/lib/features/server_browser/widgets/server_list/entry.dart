@@ -42,6 +42,7 @@ class ServerListEntry extends StatelessWidget {
     super.key,
     this.onClick,
     this.withoutQuickJoin = false,
+    this.quickJoinDownloads = false,
   });
 
   factory ServerListEntry.fromServer({
@@ -66,7 +67,7 @@ class ServerListEntry extends StatelessWidget {
       index: -1,
       hoveredIndex: hoveredIndex,
       onHover: onHover,
-      map: Map<dynamic, String>.from(map as Map<dynamic, dynamic>),
+      map: Map<String, String>.from(map as Map<dynamic, dynamic>),
       mode: mode,
       server: server,
     );
@@ -77,10 +78,11 @@ class ServerListEntry extends StatelessWidget {
   final void Function()? onClick;
   final int index;
   final int hoveredIndex;
-  final Map map;
+  final Map<String, String> map;
   final Mode mode;
   final bool isLast;
   final bool withoutQuickJoin;
+  final bool quickJoinDownloads;
 
   @override
   Widget build(BuildContext context) {
@@ -134,7 +136,7 @@ class ServerListEntry extends StatelessWidget {
                 shadows: hovered
                     ? [
                         BoxShadow(
-                          color: kActiveColor.withOpacity(.5),
+                          color: kActiveColor.withValues(alpha: .5),
                           blurRadius: 10,
                         ),
                       ]
@@ -155,23 +157,24 @@ class ServerListEntry extends StatelessWidget {
                         builder: (context) {
                           if (serverInfo.mapImageHash.isNotEmpty) {
                             return CachedNetworkImage(
-                              imageUrl:
-                                  'https://${sl.get<KyberGRPCService>().httpHostname}/images/${serverInfo.mapImageHash}.jpeg',
+                              imageUrl: sl.get<KyberGRPCService>().imageUrl(
+                                serverInfo.mapImageHash,
+                              ),
                               fit: BoxFit.cover,
                               alignment: Alignment.centerLeft,
                               colorBlendMode: BlendMode.darken,
-                              color: Colors.black.withOpacity(.12),
+                              color: Colors.black.withValues(alpha: .12),
                               fadeInDuration: .zero,
                             );
                           }
 
                           return MapHelper.getImageForMap(
-                            map['map'] as String,
+                            map['map']!,
                           )!.image(
                             fit: BoxFit.cover,
                             alignment: Alignment.centerLeft,
                             colorBlendMode: BlendMode.darken,
-                            color: Colors.black.withOpacity(.12),
+                            color: Colors.black.withValues(alpha: .12),
                           );
                         },
                       ),
@@ -210,7 +213,7 @@ class ServerListEntry extends StatelessWidget {
                                     .fold(
                                       0,
                                       (previousValue, element) =>
-                                          previousValue += element.playerCount,
+                                          previousValue + element.playerCount,
                                     );
                                 return Text(
                                   totalPlayers.toString(),
@@ -244,6 +247,7 @@ class ServerListEntry extends StatelessWidget {
                       _JoinButton(
                         key: ValueKey(serverInfo.id),
                         server: serverInfo,
+                        enabledDownload: quickJoinDownloads,
                       ),
                     ],
                   ],
@@ -258,9 +262,14 @@ class ServerListEntry extends StatelessWidget {
 }
 
 class _JoinButton extends StatefulWidget {
-  const _JoinButton({required this.server, super.key});
+  const _JoinButton({
+    required this.server,
+    required this.enabledDownload,
+    super.key,
+  });
 
   final Server server;
+  final bool enabledDownload;
 
   @override
   State<_JoinButton> createState() => _JoinButtonState();
@@ -282,30 +291,29 @@ class _JoinButtonState extends State<_JoinButton> {
       ),
       child: Builder(
         builder: (context) {
+          final canJoin = ServerBrowserHelper.canJoinServer(
+            context,
+            server: widget.server,
+            ignoreInstalled: widget.enabledDownload,
+          );
           return GestureDetector(
-            onTap:
-                ServerBrowserHelper.canJoinServer(
-                  context,
-                  server: widget.server,
-                )
+            onTap: canJoin
                 ? () {
                     context.read<ServerBrowserCubit>()
                       ..selectServer(widget.server)
-                      ..joinServer(enabledDownload: false);
+                      ..joinServer(enabledDownload: widget.enabledDownload);
                   }
                 : null,
             child: Builder(
               builder: (context) {
                 return CustomIconButton(
-                  onPressed:
-                      ServerBrowserHelper.canJoinServer(
-                        context,
-                        server: widget.server,
-                      )
+                  onPressed: canJoin
                       ? () {
                           context.read<ServerBrowserCubit>()
                             ..selectServer(widget.server)
-                            ..joinServer(enabledDownload: false);
+                            ..joinServer(
+                              enabledDownload: widget.enabledDownload,
+                            );
                         }
                       : null,
                   iconData: FluentIcons.play_solid,
@@ -320,7 +328,7 @@ class _JoinButtonState extends State<_JoinButton> {
 }
 
 class _TableServerName extends StatelessWidget {
-  const _TableServerName({required this.server, super.key});
+  const _TableServerName({required this.server});
 
   final Server server;
 
@@ -358,7 +366,10 @@ class _TableServerName extends StatelessWidget {
           Padding(
             padding: const EdgeInsets.only(right: 4, top: 2, bottom: 4),
             child: Assets.icons.kblLink.svg(
-              color: kWhiteColor,
+              colorFilter: const ColorFilter.mode(
+                kWhiteColor,
+                BlendMode.srcIn,
+              ),
               height: 15,
             ),
           ),
@@ -386,11 +397,10 @@ class _ServerInfoBar extends StatelessWidget {
     required this.server,
     required this.map,
     required this.mode,
-    super.key,
   });
 
   final Server server;
-  final Map map;
+  final Map<String, String> map;
   final Mode mode;
 
   @override
@@ -425,7 +435,7 @@ class _ServerInfoBar extends StatelessWidget {
           Text(
             server.levelSetup.mapName.isNotEmpty
                 ? server.levelSetup.mapName.toUpperCase()
-                : (map['name'] as String).toUpperCase(),
+                : map['name']!.toUpperCase(),
           ),
         ],
       ),

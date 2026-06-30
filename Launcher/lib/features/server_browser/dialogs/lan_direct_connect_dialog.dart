@@ -8,12 +8,10 @@ class LanDirectConnectResult {
   LanDirectConnectResult({
     required this.host,
     required this.port,
-    required this.passwordProtected,
   });
 
   final String host;
   final int port;
-  final bool passwordProtected;
 }
 
 class LanDirectConnectDialog extends StatefulWidget {
@@ -26,7 +24,6 @@ class LanDirectConnectDialog extends StatefulWidget {
 class _LanDirectConnectDialogState extends State<LanDirectConnectDialog> {
   String host = '';
   String portText = '25200';
-  bool passwordProtected = false;
 
   void _submit() {
     final l10n = context.l10n;
@@ -65,7 +62,6 @@ class _LanDirectConnectDialogState extends State<LanDirectConnectDialog> {
       LanDirectConnectResult(
         host: hostValue,
         port: portValue,
-        passwordProtected: passwordProtected,
       ),
     );
   }
@@ -84,7 +80,7 @@ class _LanDirectConnectDialogState extends State<LanDirectConnectDialog> {
         children: [
           Text(
             l10n.text('lan.directConnect.description'),
-            style: TextStyle(color: kWhiteColor),
+            style: const TextStyle(color: kWhiteColor),
           ),
           const SizedBox(height: 14),
           KyberInput(
@@ -98,13 +94,6 @@ class _LanDirectConnectDialogState extends State<LanDirectConnectDialog> {
             initialValue: portText,
             onChanged: (value) => setState(() => portText = value),
             onFieldSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 10),
-          Checkbox(
-            checked: passwordProtected,
-            content: Text(l10n.text('lan.directConnect.passwordProtected')),
-            onChanged: (value) =>
-                setState(() => passwordProtected = value ?? false),
           ),
         ],
       ),

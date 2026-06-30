@@ -12,6 +12,7 @@ import 'package:kyber_launcher/features/kyber/providers/kyber_proxy_cubit.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/nexusmods/dialogs/nexusmods_login.dart';
 import 'package:kyber_launcher/features/nexusmods/services/nexusmods_service.dart';
+import 'package:kyber_launcher/features/server_host/dialogs/dedicated_host_setup_dialog.dart';
 import 'package:kyber_launcher/features/settings/dialogs/change_background_dialog.dart';
 import 'package:kyber_launcher/features/settings/dialogs/connect_patreon_dialog.dart';
 import 'package:kyber_launcher/features/settings/dialogs/environment_selector.dart';
@@ -70,7 +71,7 @@ class AccountsAndUpdates extends StatelessWidget {
                       context: context,
                       builder: (_) => const ResetTokenDialog(),
                     );
-                    
+
                     if (result != true) {
                       return;
                     }
@@ -105,6 +106,16 @@ class AccountsAndUpdates extends StatelessWidget {
                   text: Preferences.nexusMods.isLoggedIn
                       ? l10n.text('common.logout')
                       : l10n.text('common.login'),
+                ),
+                KyberTableItem.button(
+                  title: l10n.text('settings.dedicatedHost.title'),
+                  text: l10n.text('settings.dedicatedHost.configure'),
+                  onClick: () async {
+                    await showKyberDialog<bool>(
+                      context: context,
+                      builder: (_) => const DedicatedHostSetupDialog(),
+                    );
+                  },
                 ),
                 KyberTableItem.button(
                   title: l10n.text('common.logout'),
@@ -180,7 +191,8 @@ class AccountsAndUpdates extends StatelessWidget {
                             ),
                             const SizedBox(width: 8),
                             Text(
-                              '${discord.globalName}   |   ${l10n.text('settings.unlink')}',
+                              '${discord.globalName}   |   '
+                              "${l10n.text('settings.unlink')}",
                               style: const TextStyle(
                                 fontSize: 18,
                                 fontWeight: FontWeight.w500,

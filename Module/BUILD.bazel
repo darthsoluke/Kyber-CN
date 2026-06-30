@@ -26,7 +26,19 @@ cc_binary(
     includes = [
         "Public",
     ],
+    copts = [
+        # Wine's PE loader currently faults before DllMain when loading the
+        # module with MSVC's newer Guard/XFG volatile metadata enabled.
+        "/guard:cf-",
+        "/guard:ehcont-",
+        "/volatileMetadata-",
+    ],
     linkopts = [
+        "/GUARD:NO",
+        "/EMITVOLATILEMETADATA:NO",
+        "/DYNAMICBASE:NO",
+        "/HIGHENTROPYVA:NO",
+        "/BASE:0x00006FFFF0000000",
         "d3d11.lib",
         "Ws2_32.lib",
         "dxgi.lib",

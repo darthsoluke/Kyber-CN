@@ -6,7 +6,7 @@ import 'package:kyber/kyber.dart' hide Server;
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/core.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_status_cubit.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/mods/services/level_declaration_service.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
@@ -22,13 +22,13 @@ class LauncherService extends LauncherCommonServiceBase {
     ServiceCall call,
     CustomLevelDataRequest req,
   ) {
-    if (!sl.isRegistered<MaximaGameInstance>()) {
+    final instance = sl.get<MaximaInstanceService>().primaryInstance;
+    if (instance == null) {
       throw Exception(
-        'MaximaGameInstance is not registered in the service locator',
+        'No Maxima game instance is registered in MaximaInstanceService',
       );
     }
 
-    final instance = sl.get<MaximaGameInstance>();
     final levelService = sl.get<LevelDeclarationService>();
     final collection = ModCollectionMetaData(
       localId: '',

@@ -20,6 +20,15 @@ ServerUnaryReactor* ClientInterfaceService::JoinServer(
 {
     g_program->m_client->m_joinToken = request->jointoken();
     g_program->m_server->m_onlineMode = !request->jointoken().empty();
+    KYBER_LOG(Info, "LAN_STAGE[rpc.client.join_server.received] id=" << request->id() << " ip=" << request->ip()
+                                                                      << ":" << request->port()
+                                                                      << " type=" << request->type()
+                                                                      << " joinTokenPresent=" << !request->jointoken().empty()
+                                                                      << " passwordPresent=" << !request->password().empty()
+                                                                      << " spectate=" << request->spectate());
+    KYBER_LOG(Info, "LAN_STAGE[rpc.client.join_server.normalized] onlineMode=" << g_program->m_server->m_onlineMode
+                                                                                << " reason="
+                                                                                << (!request->jointoken().empty() ? "token_present" : "no_token_lan_direct"));
 
     g_program->m_client->JoinServer(request->id(), request->ip(), request->port(), request->password(), request->spectate(),
         request->type() == kyber_interface::JoinServerType::PROXIED, true);

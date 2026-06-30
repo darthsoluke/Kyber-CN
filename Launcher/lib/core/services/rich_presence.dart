@@ -5,7 +5,7 @@ import 'package:kyber/kyber.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/features/kyber/services/map_helper.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/mods/services/level_declaration_service.dart';
 import 'package:kyber_launcher/gen/rust/api/maxima.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -54,7 +54,12 @@ class RichPresence {
     _started ??= DateTime.now();
 
     final isHosting = state.hasServer();
-    final instance = sl.get<MaximaGameInstance>();
+    final instance = sl.get<MaximaInstanceService>().primaryInstance;
+    if (instance == null) {
+      _logger.warning('No game instance available for rich presence update');
+      return;
+    }
+
     final levelDeclarationService = sl.get<LevelDeclarationService>();
     final tmpCollection = ModCollectionMetaData(
       localId: '',

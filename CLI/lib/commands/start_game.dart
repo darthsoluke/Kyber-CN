@@ -43,6 +43,22 @@ class StartGameCommand extends Command<int> {
         valueHelp: 'path/to/collection.kmodcollection',
       )
       ..addOption('server-id', help: 'Specify the server id to connect to')
+      ..addOption(
+        'server-address',
+        help:
+            'Specify a direct-connect server address. '
+            'This bypasses Kyber server lookup and join tokens.',
+        valueHelp: 'ip-or-hostname',
+      )
+      ..addOption(
+        'server-port',
+        defaultsTo: '25200',
+        help: 'Specify the direct-connect server port',
+      )
+      ..addOption(
+        'server-password',
+        help: 'Specify the direct-connect server password',
+      )
       ..addOption('proxy-id', help: 'Specify the proxy id to use')
       ..addOption('token', abbr: 't')
       ..addOption('game-path', help: 'Specify the game path')
@@ -67,8 +83,11 @@ class StartGameCommand extends Command<int> {
         help: 'Specify a custom directory to use for the Kyber module',
         valueHelp: 'path/to/module',
       )
+      ..addFlag('show-console', help: 'Shows the Kyber console window')
       ..addOption('interface-port', valueHelp: '9000');
   }
+
+  static const int _defaultServerPort = 25200;
 
   @override
   String get description => '''Starts Battlefront and injects Kyber''';
@@ -84,8 +103,33 @@ class StartGameCommand extends Command<int> {
     final modulePath = argResults?['module-path'] as String?;
     EnvHelper.setPath(modulePath);
     final moduleDir = modulePath ?? FileHelper.getModuleDirectory().path;
+    final serverId = (argResults?['server-id'] as String?)?.trim();
+    final serverAddress = (argResults?['server-address'] as String?)?.trim();
+    final hasServerId = serverId?.isNotEmpty ?? false;
+    final hasServerAddress = serverAddress?.isNotEmpty ?? false;
+    if (hasServerId && hasServerAddress) {
+      _logger.err('server-id and server-address are mutually exclusive');
+      return ExitCode.usage.code;
+    }
 
-    _logger.info('Starting login flow...');
+    final directConnect = hasServerAddress;
+    final onlineMode =
+        !directConnect &&
+        (Platform.environment['KYBER_ONLINE_MODE'] ?? '1') != '0';
+    Env.set('KYBER_ONLINE_MODE', onlineMode ? '1' : '0');
+    final showConsole = argResults?['show-console'] as bool? ?? false;
+    if (showConsole) {
+      Env.delete('KYBER_HIDE_CONSOLE');
+    } else {
+      Env.set('KYBER_HIDE_CONSOLE', '1');
+    }
+    _logger
+      ..info(
+        'LAN_STAGE[cli.start_game.mode] onlineMode=$onlineMode '
+        'directConnect=$directConnect serverId=${serverId ?? ''} '
+        'serverAddress=${serverAddress ?? ''}',
+      )
+      ..info('Starting login flow...');
     late ServicePlayer player;
     try {
       var loginCredentials = argResults?['credentials'] as String?;
@@ -113,28 +157,50 @@ class StartGameCommand extends Command<int> {
 
     _logger
       ..success('Logged in as ${player.displayName}.')
-      ..info('Fetching Maxima auth token...');
+      ..info(
+        onlineMode
+            ? 'Fetching Maxima auth token...'
+            : 'Skipping Kyber auth token fetch for offline/direct mode...',
+      );
 
-    final authToken = await getAuthToken();
-
-    _logger.info('Fetching Kyber auth token...');
-    try {
-      final kToken = await service.getAuthToken(authToken);
+    if (!onlineMode) {
+      final kToken =
+          (argResults?['token'] as String?) ??
+          Platform.environment['KYBER_API_TOKEN'] ??
+          'offline-direct';
+      service.token = kToken;
       Env.set('KYBER_API_TOKEN', kToken);
-    } catch (e) {
-      if (e is GrpcError) {
-        if (e.code == StatusCode.unauthenticated ||
-            e.code == StatusCode.permissionDenied) {
-          _logger.err('Kyber Login Error: ${e.message}');
-        } else {
-          _logger.err('Failed to fetch Kyber auth token: ${e.message}');
+      _logger.info(
+        'LAN_STAGE[cli.start_game.auth.skip] reason=offline_direct '
+        'tokenSource=${_offlineTokenSource()}',
+      );
+    } else if (argResults?['token'] != null) {
+      final kToken = argResults?['token'] as String;
+      service.token = kToken;
+      Env.set('KYBER_API_TOKEN', kToken);
+      _logger.info('LAN_STAGE[cli.start_game.auth.argument]');
+    } else {
+      final authToken = await getAuthToken();
+
+      _logger.info('Fetching Kyber auth token...');
+      try {
+        final kToken = await service.getAuthToken(authToken);
+        Env.set('KYBER_API_TOKEN', kToken);
+      } catch (e) {
+        if (e is GrpcError) {
+          if (e.code == StatusCode.unauthenticated ||
+              e.code == StatusCode.permissionDenied) {
+            _logger.err('Kyber Login Error: ${e.message}');
+          } else {
+            _logger.err('Failed to fetch Kyber auth token: ${e.message}');
+          }
+
+          return ExitCode.usage.code;
         }
-
-        return ExitCode.usage.code;
       }
-    }
 
-    _logger.success('Kyber auth token fetched');
+      _logger.success('Kyber auth token fetched');
+    }
 
     final rawModsPath = argResults?['raw-mods'] as String?;
     File? collectionFile;
@@ -149,11 +215,11 @@ class StartGameCommand extends Command<int> {
     }
 
     Server? server;
-    if (argResults?['server-id'] != null) {
+    if (hasServerId) {
       try {
-        _logger.info("Joining server with id: ${argResults!['server-id']}");
+        _logger.info('Joining server with id: $serverId');
         server = await service.serverBrowserClient.getServer(
-          ServerRequest(id: argResults!['server-id']! as String),
+          ServerRequest(id: serverId),
         );
 
         final currentIp = await KyberNetworkHelper.getCurrentIpAddress();
@@ -163,9 +229,7 @@ class StartGameCommand extends Command<int> {
       } catch (e) {
         if (e is GrpcError) {
           if (e.code == StatusCode.notFound) {
-            _logger.err(
-              'Server with id "${argResults!['server-id']}" not found',
-            );
+            _logger.err('Server with id "$serverId" not found');
           } else {
             _logger.err('Failed to fetch server: ${e.message}');
           }
@@ -174,7 +238,37 @@ class StartGameCommand extends Command<int> {
     }
 
     JoinServerRequest? joinServerByIP;
-    if (server != null) {
+    if (directConnect) {
+      final address = serverAddress!;
+      final serverPort = int.tryParse(
+        (argResults?['server-port'] as String?)?.trim() ?? '',
+      );
+      if (serverPort == null || serverPort <= 0 || serverPort > 65535) {
+        _logger.err('server-port must be between 1 and 65535');
+        return ExitCode.usage.code;
+      }
+
+      final password =
+          (argResults?['server-password'] as String?) ??
+          Platform.environment['KYBER_SERVER_PASSWORD'] ??
+          '';
+      joinServerByIP = JoinServerRequest(
+        id: 'lan:$address:$serverPort',
+        ip: address,
+        port: serverPort,
+        spectate: argResults?['spectate'] as bool? ?? false,
+        type: JoinServerType.DIRECT,
+        joinToken: '',
+        password: password,
+      );
+      _logger.info(
+        'LAN_STAGE[cli.start_game.direct_join.request] '
+        'id=${joinServerByIP.id} '
+        'ip=${joinServerByIP.ip}:${joinServerByIP.port} '
+        'passwordPresent=${joinServerByIP.password.isNotEmpty} '
+        'spectate=${joinServerByIP.spectate}',
+      );
+    } else if (server != null) {
       KyberProxy? proxy;
       if (server.requiresProxy) {
         final proxyId = argResults?['proxy-id'] as String?;
@@ -204,7 +298,7 @@ class StartGameCommand extends Command<int> {
       joinServerByIP = JoinServerRequest(
         id: server.id,
         ip: server.requiresProxy ? proxy!.proxyInfo.ip : server.ip,
-        port: server.requiresProxy ? null : server.port,
+        port: server.requiresProxy ? _defaultServerPort : server.port,
         spectate: argResults?['spectate'] as bool? ?? false,
         type: server.requiresProxy
             ? JoinServerType.PROXIED
@@ -217,8 +311,15 @@ class StartGameCommand extends Command<int> {
         argResults?['interface-port'] as String? ??
         (await KyberNetworkHelper.findAvailablePort()).toString();
     Env.set('KYBER_INTERFACE_PORT', kyberPort);
-    Env.set('KYBER_API_HOSTNAME', sl.get<KyberGRPCService>().host);
-    Env.set('KYBER_HTTP_HOSTNAME', sl.get<KyberGRPCService>().httpHostname);
+    Env.set('KYBER_API_HOSTNAME', service.moduleRpcTarget);
+    Env.set('KYBER_HTTP_HOSTNAME', service.httpHostname);
+    Env.set('KYBER_API_INSECURE', service.isInsecure ? '1' : '0');
+    Env.set('KYBER_WS_SCHEME', service.webSocketScheme);
+    _logger.info(
+      'LAN_STAGE[cli.start_game.api_target] '
+      'rpcTarget=${service.moduleRpcTarget} httpHost=${service.httpHostname} '
+      'insecure=${service.isInsecure} wsScheme=${service.webSocketScheme}',
+    );
 
     ModData? modData;
     var gameplayMods = <FrostyMod>[];
@@ -315,20 +416,25 @@ class StartGameCommand extends Command<int> {
     );
 
     _logger.info('Kyber will listen on port $kyberPort');
+    final gameArgs =
+        (argResults?['game-args'] as List<String>? ?? const <String>[])
+            .map((value) => value.trim())
+            .where((value) => value.isNotEmpty)
+            .toList(growable: false);
     final pid = await startGame(
       gameSlug: 'star-wars-battlefront-2',
       gamePathOverride: argResults?['game-path'] as String?,
-      gameArgs: [],
+      gameArgs: gameArgs,
     );
 
     final moduleFile = join(moduleDir, 'Kyber.dll');
     _logger.info('Injecting Kyber from $moduleFile...');
-    injectKyber(pid: pid, path: moduleFile);
+    await injectKyber(pid: pid, path: moduleFile);
 
     sl.registerSingleton<MaximaGameInstance>(
       MaximaGameInstance(
         pid: pid,
-        isDedicated: true,
+        isDedicated: false,
         clientService: ClientGRPCService('', 0),
         mods: gameplayMods,
       ),
@@ -355,5 +461,17 @@ class StartGameCommand extends Command<int> {
     }
 
     return ExitCode.success.code;
+  }
+
+  String _offlineTokenSource() {
+    if (argResults?['token'] != null) {
+      return 'argument';
+    }
+
+    if (Platform.environment.containsKey('KYBER_API_TOKEN')) {
+      return 'environment';
+    }
+
+    return 'placeholder';
   }
 }

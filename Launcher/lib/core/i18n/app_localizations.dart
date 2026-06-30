@@ -1,4 +1,5 @@
-import 'dart:ui';
+// Translation entries stay inline so keys and source text remain easy to audit.
+// ignore_for_file: lines_longer_than_80_chars
 
 import 'package:flutter/widgets.dart';
 import 'package:kyber_launcher/core/config/locales.dart';
@@ -6,6 +7,24 @@ import 'package:kyber_launcher/core/i18n/app_locale.dart';
 
 class AppLocalizations {
   AppLocalizations(this.locale);
+
+  factory AppLocalizations.lookup(Locale locale) {
+    final normalized = Locales.normalizeLanguageCode(
+      locale.toLanguageTag().replaceAll('-', '_'),
+    );
+    return AppLocalizations(
+      Locales.supportedLanguages.firstWhere(
+        (item) => item.languageCode == normalized,
+        orElse: () => Locales.fallbackLocale,
+      ),
+    );
+  }
+
+  // Keep the legacy property-style API for existing call sites.
+  // ignore: prefer_constructors_over_static_methods
+  static AppLocalizations get current => AppLocalizations.lookup(
+    AppLocale.getLocale(),
+  );
 
   final Locale locale;
 
@@ -21,20 +40,6 @@ class AppLocalizations {
     );
     return localization ?? current;
   }
-
-  static AppLocalizations lookup(Locale locale) {
-    final normalized = Locales.normalizeLanguageCode(
-      locale.toLanguageTag().replaceAll('-', '_'),
-    );
-    return AppLocalizations(
-      Locales.supportedLanguages.firstWhere(
-        (item) => item.languageCode == normalized,
-        orElse: () => Locales.fallbackLocale,
-      ),
-    );
-  }
-
-  static AppLocalizations get current => lookup(AppLocale.getLocale());
 
   static const Map<String, Map<String, String>> _translations = {
     'en': {
@@ -94,11 +99,26 @@ class AppLocalizations {
       'common.unknownServer': 'Unknown Server',
       'common.backToServerBrowser': 'Back to Server Browser',
       'nav.home': 'HOME',
+      'nav.lanJoin': 'DIRECT JOIN',
       'nav.host': 'HOST',
       'nav.stats': 'STATS',
       'nav.mods': 'MODS',
       'nav.settings': 'SETTINGS',
       'nav.launchGame': 'LAUNCH GAME',
+      'mode.title': 'Choose how KYBER should start',
+      'mode.subtitle':
+          'Direct mode keeps the workspace to direct join, BFII host-server launch, mods, and network settings. Online mode keeps the full KYBER launcher.',
+      'mode.switch': 'Switch mode',
+      'mode.lan.eyebrow': 'NO LAUNCHER LOGIN',
+      'mode.lan.title': 'Direct BFII host mode',
+      'mode.lan.description':
+          'Skip launcher login screens. Launch a BFII host-server process with selected mods, or join a direct server from a client machine with the same mod checks used by official KYBER servers.',
+      'mode.lan.action': 'Host BFII server',
+      'mode.online.eyebrow': 'FULL KYBER',
+      'mode.online.title': 'Online launcher mode',
+      'mode.online.description':
+          'Login with EA/Kyber and keep the complete launcher: server browser, official hosting, stats, moderation, social features, downloads, and account services.',
+      'mode.online.action': 'Login / full launcher',
       'settings.version': 'VERSION: {version}#CL{build}',
       'settings.languageAccessibility.title': 'LANGUAGE & ACCESSIBILITY',
       'settings.languageAccessibility.description':
@@ -165,6 +185,55 @@ class AppLocalizations {
       'settings.proxy': 'PROXY',
       'settings.resetKyberToken': 'Reset Kyber Token',
       'settings.nexusMods': 'NexusMods',
+      'settings.dedicatedHost.title': 'BFII Dedicated Host',
+      'settings.dedicatedHost.configure': 'Configure',
+      'settings.dedicatedHost.required':
+          'Configure BFII Dedicated Host before starting a host server.',
+      'settings.dedicatedHost.dialogTitle': 'BFII Dedicated Host Setup',
+      'settings.dedicatedHost.dialogDescription':
+          'Configure the local Battlefront II path, runtime package, and '
+          'license behavior used by the BFII host-server process.',
+      'settings.dedicatedHost.authSession': 'EA/Maxima session',
+      'settings.dedicatedHost.authSessionHint':
+          'Dedicated hosting uses the normal EA OAuth/Maxima session already '
+          'stored by the Launcher. Direct password login is disabled in this '
+          'shipping build, so passwords are not saved or passed to the helper.',
+      'settings.dedicatedHost.clearLegacyCredentials':
+          'Clear Legacy Saved Credentials',
+      'settings.dedicatedHost.user': 'EA/Maxima username',
+      'settings.dedicatedHost.userPlaceholder': 'email or EA ID',
+      'settings.dedicatedHost.password': 'EA/Maxima password',
+      'settings.dedicatedHost.passwordPreserve':
+          'EA/Maxima password (leave blank to keep saved password)',
+      'settings.dedicatedHost.passwordPlaceholder': 'password',
+      'settings.dedicatedHost.passwordOptional': 'leave blank to keep current',
+      'settings.dedicatedHost.licenseMode': 'BFII license mode',
+      'settings.dedicatedHost.licenseModeReuse':
+          'Reuse cached license (advanced)',
+      'settings.dedicatedHost.licenseModeRefresh':
+          'Force refresh license (recommended)',
+      'settings.dedicatedHost.licenseModeHint':
+          'Dedicated hosting should refresh the BFII license before launch. '
+          'Use cached reuse only when you intentionally want a faster local retry.',
+      'settings.dedicatedHost.denuvoToken': 'Denuvo token override (optional)',
+      'settings.dedicatedHost.denuvoTokenPreserve':
+          'Denuvo token override (leave blank to keep saved token)',
+      'settings.dedicatedHost.denuvoTokenPlaceholder':
+          'advanced: paste a current Denuvo token only if required',
+      'settings.dedicatedHost.denuvoTokenOptional':
+          'leave blank to keep current',
+      'settings.dedicatedHost.clearDenuvoToken': 'Clear Token',
+      'settings.dedicatedHost.gamePath': 'Battlefront II executable',
+      'settings.dedicatedHost.gamePathPlaceholder':
+          'Select starwarsbattlefrontii.exe',
+      'settings.dedicatedHost.runtimeRoot': 'Dedicated runtime package',
+      'settings.dedicatedHost.runtimeRootPlaceholder':
+          'dedicated_runtime folder or development workspace',
+      'settings.dedicatedHost.runtimeHint':
+          'Shipping builds should include dedicated_runtime next to the '
+          'Launcher executable. Development builds can use the workspace root.',
+      'settings.dedicatedHost.autoDetect': 'Auto Detect',
+      'settings.dedicatedHost.missing': 'Missing: {items}',
       'settings.eaLogout': 'EA Logout',
       'settings.linkedAccounts.header': 'LINKED ACCOUNTS',
       'settings.discord': 'Discord',
@@ -189,11 +258,15 @@ class AppLocalizations {
       'settings.removeBackground': 'Remove Background',
       'settings.copyKyberToken': 'Copy Kyber Token',
       'serverBrowser.online': 'ONLINE',
-      'serverBrowser.lan': 'LAN',
+      'serverBrowser.lan': 'DIRECT',
+      'serverBrowser.lanHint.title': 'Direct BFII host servers',
+      'serverBrowser.lanHint.description':
+          'Direct servers expose metadata before join. KYBER reads map, password state, and required mods first, then uses the normal official-style mod check and download flow.',
       'serverBrowser.searchLanPlaceholder':
-          'Search LAN servers, host name or IP',
+          'Search direct servers, host name or IP',
       'serverBrowser.directConnect': 'Direct Connect',
-      'serverBrowser.lanCount': '{count} LAN',
+      'serverBrowser.directConnectFailed': 'Direct connect failed',
+      'serverBrowser.lanCount': '{count} direct',
       'serverBrowser.filter.region': 'REGION',
       'serverBrowser.filter.serverType': 'SERVER TYPE',
       'serverBrowser.filter.gameType': 'GAME TYPE',
@@ -226,11 +299,11 @@ class AppLocalizations {
       'join.withoutCosmetics': 'WITHOUT COSMETICS',
       'join.selectCollection': 'SELECT A COLLECTION',
       'join.lanNotRegistered':
-          'This LAN server is running in online mode but is not registered with Kyber.',
+          'This direct server is running in online mode but is not registered with Kyber.',
       'join.bannedFromServer': 'You are banned from this server',
       'lan.directConnect.title': 'DIRECT CONNECT',
       'lan.directConnect.description':
-          'Join a LAN server by IP address or hostname.',
+          'Join by IP or hostname. The server must expose KYBER metadata on UDP/25249 so mods can be checked before joining.',
       'lan.directConnect.hostPlaceholder': 'IP or Hostname (e.g. 192.168.1.20)',
       'lan.directConnect.portPlaceholder': 'Port (default 25200)',
       'lan.directConnect.passwordProtected': 'Password protected',
@@ -243,25 +316,113 @@ class AppLocalizations {
       'host.serverNamePlaceholder': 'Server Name',
       'host.updateServer': 'UPDATE SERVER',
       'host.startServer': 'START SERVER',
+      'host.startDedicatedServer': 'START BFII HOST SERVER',
+      'host.startDedicatedServerShort': 'START HOST',
+      'host.startingServer': 'STARTING...',
+      'host.lanDedicatedHint':
+          'BFII host-server process: no local player client, selected mods loaded. This is not a standalone backend; it still launches BFII/Frostbite. This BFII process occupies this machine, so join from another PC or run the host on a VPS. Open the game UDP port and UDP/25249 metadata port so direct clients can pass normal mod checks.',
+      'host.progress.title': 'START SERVER',
+      'host.progress.dedicatedTitle': 'START BFII HOST SERVER',
+      'host.progress.dialogOpened': 'Start request received. Preparing checks.',
+      'host.progress.running': 'Running...',
+      'host.progress.retry': 'Retry',
+      'host.progress.retrying': 'Retry requested. Restarting checks.',
+      'host.progress.changeDedicatedConfig': 'CHANGE CONFIG / PATHS',
+      'host.progress.cleanupOrphans': 'CLEAN ORPHANS',
+      'host.progress.cleanupStarted':
+          'Cleaning orphaned BFII/Kyber host processes.',
+      'host.progress.cleanupCompleted': 'Orphan cleanup completed.',
+      'host.progress.cleanupFailedWithMessage': 'Cleanup failed: {message}',
+      'host.progress.configurationUpdated':
+          'Configuration updated. Retry when ready.',
+      'host.progress.configurationCancelled': 'Configuration was not changed.',
+      'host.progress.completed': 'Completed.',
+      'host.progress.viewControlPanel': 'VIEW CONTROL PANEL',
+      'host.progress.failed': 'Failed.',
+      'host.progress.failedWithMessage': 'Failed: {message}',
+      'host.progress.alreadyRunning':
+          'A server start operation is already running.',
+      'host.progress.validateForm': 'Validating server form.',
+      'host.progress.formUnavailable':
+          'The server form is not available. Reopen the host page and try again.',
+      'host.progress.formInvalid': 'Server form is invalid.',
+      'host.progress.formInvalidWithField': '{field}: {message}',
+      'host.progress.formValidated': 'Server form validated.',
+      'host.progress.rotationCollected':
+          'Map rotation collected: {count} entries.',
+      'host.progress.uploadHashes':
+          'Uploading missing map images and hashes for official mode.',
+      'host.progress.uploadHashesDone': 'Map image/hash upload completed.',
+      'host.progress.validateDraft': 'Validating host launch request.',
+      'host.progress.draftValidated': 'Host launch request validated.',
+      'host.progress.updateServer': 'Updating selected server.',
+      'host.progress.updateCompleted': 'Selected server updated.',
+      'host.progress.buildRequest': 'Building KYBER start-server request.',
+      'host.progress.buildStartupCommands': 'Building startup commands.',
+      'host.progress.officialValidate':
+          'Validating official KYBER server registration.',
+      'host.progress.officialValidated':
+          'Official KYBER server registration validated.',
+      'host.progress.directDispatch':
+          'Direct BFII host mode selected. Checking existing host process.',
+      'host.progress.liveRpcDispatch':
+          'Existing game instance found. Starting server through live RPC.',
+      'host.progress.launchDispatch':
+          'No game instance found. Launching BFII host process.',
+      'host.progress.launchGameProcess':
+          'Starting BFII/Frostbite host process and injecting KYBER module.',
+      'host.progress.externalHostStart':
+          'Starting isolated one-click BFII host helper.',
+      'host.progress.liveRpcStart':
+          'Sending start-server request to the running game instance.',
+      'host.progress.liveRpcStarted':
+          'Running game instance accepted the start-server request.',
+      'host.progress.confirmHostInstance':
+          'Confirming the BFII host process is registered and still running.',
+      'host.progress.hostInstanceConfirmed':
+          'BFII host process confirmed: PID {pid}.',
+      'host.progress.hostInstanceMissing':
+          'BFII host process was not confirmed after launch. Check EA/Maxima credentials, game path, and anti-virus injection blocking.',
+      'host.progress.serverStarted':
+          'BFII host server is running. Close this dialog to view the control panel at the top of the right settings panel.',
+      'host.dedicatedControl.title': 'BFII HOST SERVER RUNNING',
+      'host.dedicatedControl.status': 'PID {pid} · {mods} gameplay mods',
+      'host.dedicatedControl.externalStatus':
+          '{status} · PID {pid} · {logs} log lines',
+      'host.dedicatedControl.starting': 'Starting',
+      'host.dedicatedControl.running': 'Running',
+      'host.dedicatedControl.failed': 'Failed',
+      'host.dedicatedControl.stopping': 'Stopping',
+      'host.dedicatedControl.idle': 'Idle',
+      'host.dedicatedControl.server': '{name} · UDP {port}',
+      'host.dedicatedControl.joinAddresses': 'JOIN ADDRESSES',
+      'host.dedicatedControl.logs': 'RECENT LOGS',
+      'host.dedicatedControl.noJoinAddress':
+          'No usable IPv4 address was found. Check your network adapter.',
+      'host.dedicatedControl.stop': 'STOP SERVER',
+      'host.dedicatedControl.stopped': 'BFII host server stopped',
       'host.serverUpdated': 'Server updated',
       'host.mapRotationRequired':
           'You need to add at least one map to the map rotation',
       'host.initialCommandsRequireIdle':
           'Friendly Fire and Health Regeneration can only be set when no game is running',
+      'host.restartRequiredForModCollection':
+          'The selected mod collection is not loaded in the running game. Close the game and start the BFII host server again so KYBER can launch with the selected mods.',
       'host.failedToStartServer': 'Failed to start server: {message}',
       'host.unexpectedStartServerError':
           'An unexpected error occurred while starting the server',
       'host.description': 'DESCRIPTION',
       'host.descriptionPlaceholder': 'SERVER DESCRIPTION',
       'host.server.section': 'SERVER',
-      'host.authMode': 'AUTH MODE',
+      'host.authMode': 'HOST MODE',
       'host.port': 'PORT',
       'host.portPlaceholder': '25200',
       'host.invalidPort': 'Enter a valid port (1-65535)',
       'host.customPortOnlineUnsupported':
-          'Custom ports currently require OFFLINE/LAN mode. Online registration still uses port 25200.',
-      'host.offline': 'OFFLINE',
-      'host.online': 'ONLINE',
+          'Custom ports are only available in direct BFII host mode. Official Kyber mode still uses port 25200.',
+      'host.offline': 'DIRECT',
+      'host.dedicatedLanMode': 'DIRECT BFII HOST',
+      'host.online': 'OFFICIAL KYBER',
       'host.maxPlayers': 'MAX PLAYERS',
       'host.maxSpectators': 'MAX SPECTATORS',
       'host.proximityChat': 'PROXIMITY CHAT',
@@ -286,10 +447,19 @@ class AppLocalizations {
       'host.ingame.changeMap': 'CHANGE MAP',
       'host.ingame.pauseTimer': 'Pause Timer',
       'maxima.gameLaunching': 'GAME LAUNCHING',
+      'maxima.dedicatedLaunching': 'BFII HOST SERVER STARTING',
       'maxima.updatingModule': 'Updating Kyber Module...',
       'maxima.startingGame': 'Starting Game...',
+      'maxima.startingDedicated': 'Starting BFII Host Server...',
+      'maxima.progress.prepareModule': 'Preparing bundled KYBER module...',
+      'maxima.progress.preloadMods': 'Preloading selected mods...',
+      'maxima.progress.checkService': 'Checking Maxima background service...',
+      'maxima.progress.launchBfii':
+          'Requesting BFII host process launch through Maxima...',
       'maxima.startingGameDescription':
           'Please wait while the game is starting. This may take a few seconds.',
+      'maxima.startingDedicatedDescription':
+          'Please wait while the BFII host-server process starts. The Host page will show server controls after launch succeeds.',
       'maxima.failedToUpdateModule': 'Failed to update Kyber Module: {message}',
       'maxima.failedToStartGame': 'Failed to start game: {message}',
       'maxima.failedToStartGameTitle': 'FAILED TO START GAME',
@@ -446,11 +616,24 @@ class AppLocalizations {
       'common.unknownServer': '未知服务器',
       'common.backToServerBrowser': '返回服务器浏览器',
       'nav.home': '主页',
+      'nav.lanJoin': '直连加入',
       'nav.host': '开服',
       'nav.stats': '统计',
       'nav.mods': '模组',
       'nav.settings': '设置',
       'nav.launchGame': '启动游戏',
+      'mode.title': '选择 KYBER 启动方式',
+      'mode.subtitle': '直连模式只保留直连加入、BFII 主机服启动、模组和网络设置；在线模式保留完整 KYBER 启动器。',
+      'mode.switch': '切换模式',
+      'mode.lan.eyebrow': '无需启动器登录',
+      'mode.lan.title': '直连 BFII 主机服模式',
+      'mode.lan.description':
+          '跳过启动器登录页。用选定模组启动 BFII 主机服进程，或直连加入服务器，并复用官方 KYBER 同款模组检测流程。',
+      'mode.lan.action': '启动 BFII 主机服',
+      'mode.online.eyebrow': '完整 KYBER',
+      'mode.online.title': '在线启动器模式',
+      'mode.online.description': '登录 EA/Kyber，保留服务器浏览、官方开服、统计、管理、社交、下载和账号服务。',
+      'mode.online.action': '登录 / 完整启动器',
       'settings.version': '版本：{version}#CL{build}',
       'settings.languageAccessibility.title': '语言与辅助功能',
       'settings.languageAccessibility.description': '更改语言、代理与辅助功能设置',
@@ -514,6 +697,44 @@ class AppLocalizations {
       'settings.proxy': '代理',
       'settings.resetKyberToken': '重置 Kyber Token',
       'settings.nexusMods': 'NexusMods',
+      'settings.dedicatedHost.title': 'BFII 独立主机服',
+      'settings.dedicatedHost.configure': '配置',
+      'settings.dedicatedHost.required': '启动主机服前需要先配置 BFII 独立主机服。',
+      'settings.dedicatedHost.dialogTitle': 'BFII 独立主机服配置',
+      'settings.dedicatedHost.dialogDescription':
+          '配置本地 Battlefront II 路径、运行时包和 BFII 主机服进程使用的许可证策略。',
+      'settings.dedicatedHost.authSession': 'EA/Maxima 会话',
+      'settings.dedicatedHost.authSessionHint':
+          'Dedicated 开服会复用 Launcher 已保存的正常 EA OAuth/Maxima 会话。发行版禁用密码直登，因此不会保存密码，也不会把密码传给 helper。',
+      'settings.dedicatedHost.clearLegacyCredentials': '清除旧版已保存凭据',
+      'settings.dedicatedHost.user': 'EA/Maxima 用户名',
+      'settings.dedicatedHost.userPlaceholder': '邮箱或 EA ID',
+      'settings.dedicatedHost.password': 'EA/Maxima 密码',
+      'settings.dedicatedHost.passwordPreserve': 'EA/Maxima 密码（留空则保留已保存密码）',
+      'settings.dedicatedHost.passwordPlaceholder': '密码',
+      'settings.dedicatedHost.passwordOptional': '留空保留当前密码',
+      'settings.dedicatedHost.licenseMode': 'BFII 许可证策略',
+      'settings.dedicatedHost.licenseModeReuse': '复用缓存许可证（高级）',
+      'settings.dedicatedHost.licenseModeRefresh': '强制刷新许可证（推荐）',
+      'settings.dedicatedHost.licenseModeHint':
+          'Dedicated 开服应在启动前刷新 BFII 许可证。只有明确需要更快的本机重试时，才复用缓存许可证。',
+      'settings.dedicatedHost.denuvoToken': 'Denuvo Token 覆盖（可选）',
+      'settings.dedicatedHost.denuvoTokenPreserve':
+          'Denuvo Token 覆盖（留空则保留已保存 Token）',
+      'settings.dedicatedHost.denuvoTokenPlaceholder':
+          '高级选项：仅在需要时粘贴当前机器可用的 Denuvo Token',
+      'settings.dedicatedHost.denuvoTokenOptional': '留空保留当前 Token',
+      'settings.dedicatedHost.clearDenuvoToken': '清除 Token',
+      'settings.dedicatedHost.gamePath': 'Battlefront II 可执行文件',
+      'settings.dedicatedHost.gamePathPlaceholder':
+          '选择 starwarsbattlefrontii.exe',
+      'settings.dedicatedHost.runtimeRoot': '独立主机服运行时包',
+      'settings.dedicatedHost.runtimeRootPlaceholder':
+          'dedicated_runtime 文件夹或开发工作区',
+      'settings.dedicatedHost.runtimeHint':
+          '发行版应在 Launcher 可执行文件旁包含 dedicated_runtime。开发版可使用源码工作区。',
+      'settings.dedicatedHost.autoDetect': '自动检测',
+      'settings.dedicatedHost.missing': '缺少：{items}',
       'settings.eaLogout': 'EA 登出',
       'settings.linkedAccounts.header': '已关联账号',
       'settings.discord': 'Discord',
@@ -538,10 +759,14 @@ class AppLocalizations {
       'settings.removeBackground': '移除背景',
       'settings.copyKyberToken': '复制 Kyber Token',
       'serverBrowser.online': '在线',
-      'serverBrowser.lan': '局域网',
-      'serverBrowser.searchLanPlaceholder': '搜索局域网服务器、主机名或 IP',
+      'serverBrowser.lan': '直连',
+      'serverBrowser.lanHint.title': '直连 BFII 主机服',
+      'serverBrowser.lanHint.description':
+          '直连 BFII 主机服会在加入前暴露服务器元数据。KYBER 会先读取地图、密码状态和所需模组，再走正常的模组检查与下载流程。',
+      'serverBrowser.searchLanPlaceholder': '搜索直连服务器、主机名或 IP',
       'serverBrowser.directConnect': '直连',
-      'serverBrowser.lanCount': '{count} 个局域网服务器',
+      'serverBrowser.directConnectFailed': '直连失败',
+      'serverBrowser.lanCount': '{count} 个直连服务器',
       'serverBrowser.filter.region': '地区',
       'serverBrowser.filter.serverType': '服务器类型',
       'serverBrowser.filter.gameType': '游戏类型',
@@ -571,10 +796,11 @@ class AppLocalizations {
       'join.withCosmetics': '使用外观模组',
       'join.withoutCosmetics': '不使用外观模组',
       'join.selectCollection': '选择一个收藏集',
-      'join.lanNotRegistered': '该局域网服务器以在线模式运行，但尚未向 Kyber 注册。',
+      'join.lanNotRegistered': '该直连服务器以在线模式运行，但尚未向 Kyber 注册。',
       'join.bannedFromServer': '你已被该服务器封禁',
       'lan.directConnect.title': '直接连接',
-      'lan.directConnect.description': '通过 IP 地址或主机名加入局域网服务器。',
+      'lan.directConnect.description':
+          '通过 IP 或主机名加入。服务器必须开放 UDP/25249 元数据端口，才能在加入前检查模组。',
       'lan.directConnect.hostPlaceholder': 'IP 或主机名（例如 192.168.1.20）',
       'lan.directConnect.portPlaceholder': '端口（默认 25200）',
       'lan.directConnect.passwordProtected': '需要密码',
@@ -586,22 +812,92 @@ class AppLocalizations {
       'host.serverNamePlaceholder': '服务器名称',
       'host.updateServer': '更新服务器',
       'host.startServer': '启动服务器',
+      'host.startDedicatedServer': '启动 BFII 主机服',
+      'host.startDedicatedServerShort': '启动主机服',
+      'host.startingServer': '启动中...',
+      'host.lanDedicatedHint':
+          '启动 BFII/Frostbite 主机服进程：本机不作为玩家加入，加载所选模组。这不是独立后端，仍会启动 BFII 进程。请从另一台电脑加入，或把主机服运行在 VPS 上；同时开放游戏 UDP 端口和 UDP/25249 元数据端口，直连客户端才能走正常模组检测。',
+      'host.progress.title': '启动服务器',
+      'host.progress.dedicatedTitle': '启动 BFII 主机服',
+      'host.progress.dialogOpened': '已收到启动请求，正在准备检查。',
+      'host.progress.running': '正在执行...',
+      'host.progress.retry': '重试',
+      'host.progress.retrying': '已请求重试，正在重新检查。',
+      'host.progress.changeDedicatedConfig': '更改配置/路径',
+      'host.progress.cleanupOrphans': '清理残留进程',
+      'host.progress.cleanupStarted': '正在清理残留的 BFII/Kyber 主机进程。',
+      'host.progress.cleanupCompleted': '残留进程清理完成。',
+      'host.progress.cleanupFailedWithMessage': '清理失败：{message}',
+      'host.progress.configurationUpdated': '配置已更新，可以重试。',
+      'host.progress.configurationCancelled': '配置未更改。',
+      'host.progress.completed': '已完成。',
+      'host.progress.viewControlPanel': '查看控制面板',
+      'host.progress.failed': '失败。',
+      'host.progress.failedWithMessage': '失败：{message}',
+      'host.progress.alreadyRunning': '已有一个服务器启动流程正在运行。',
+      'host.progress.validateForm': '正在校验服务器表单。',
+      'host.progress.formUnavailable': '服务器表单不可用，请重新打开开服页面后再试。',
+      'host.progress.formInvalid': '服务器表单无效。',
+      'host.progress.formInvalidWithField': '{field}：{message}',
+      'host.progress.formValidated': '服务器表单校验通过。',
+      'host.progress.rotationCollected': '已读取地图轮换：{count} 项。',
+      'host.progress.uploadHashes': '官方模式：正在上传缺失的地图图片与哈希。',
+      'host.progress.uploadHashesDone': '地图图片与哈希上传完成。',
+      'host.progress.validateDraft': '正在校验开服请求。',
+      'host.progress.draftValidated': '开服请求校验通过。',
+      'host.progress.updateServer': '正在更新已选择的服务器。',
+      'host.progress.updateCompleted': '已选择的服务器更新完成。',
+      'host.progress.buildRequest': '正在构建 KYBER 开服请求。',
+      'host.progress.buildStartupCommands': '正在构建启动命令。',
+      'host.progress.officialValidate': '正在校验官方 KYBER 服务器注册。',
+      'host.progress.officialValidated': '官方 KYBER 服务器注册校验通过。',
+      'host.progress.directDispatch': '已选择直连 BFII 主机服模式，正在检查现有主机进程。',
+      'host.progress.liveRpcDispatch': '发现已有游戏实例，正在通过实时 RPC 开服。',
+      'host.progress.launchDispatch': '未发现游戏实例，正在启动 BFII 主机进程。',
+      'host.progress.launchGameProcess':
+          '正在启动 BFII/Frostbite 主机进程并注入 KYBER 模块。',
+      'host.progress.externalHostStart': '正在启动隔离的一键 BFII 主机服 helper。',
+      'host.progress.liveRpcStart': '正在向运行中的游戏实例发送开服请求。',
+      'host.progress.liveRpcStarted': '运行中的游戏实例已接受开服请求。',
+      'host.progress.confirmHostInstance': '正在确认 BFII 主机进程已注册且仍在运行。',
+      'host.progress.hostInstanceConfirmed': '已确认 BFII 主机进程：PID {pid}。',
+      'host.progress.hostInstanceMissing':
+          '启动后未能确认 BFII 主机进程。请检查 EA/Maxima 凭据、游戏路径，以及杀毒软件是否拦截注入。',
+      'host.progress.serverStarted': 'BFII 主机服已运行。关闭此弹窗后，右侧设置栏顶部就是控制面板。',
+      'host.dedicatedControl.title': 'BFII 主机服运行中',
+      'host.dedicatedControl.status': 'PID {pid} · {mods} 个玩法模组',
+      'host.dedicatedControl.externalStatus':
+          '{status} · PID {pid} · {logs} 条日志',
+      'host.dedicatedControl.starting': '启动中',
+      'host.dedicatedControl.running': '运行中',
+      'host.dedicatedControl.failed': '失败',
+      'host.dedicatedControl.stopping': '停止中',
+      'host.dedicatedControl.idle': '空闲',
+      'host.dedicatedControl.server': '{name} · UDP {port}',
+      'host.dedicatedControl.joinAddresses': '加入地址',
+      'host.dedicatedControl.logs': '最近日志',
+      'host.dedicatedControl.noJoinAddress': '没有找到可用 IPv4 地址，请检查网络适配器。',
+      'host.dedicatedControl.stop': '停止服务器',
+      'host.dedicatedControl.stopped': 'BFII 主机服已停止',
       'host.serverUpdated': '服务器已更新',
       'host.mapRotationRequired': '至少需要在地图轮换中添加一张地图',
       'host.initialCommandsRequireIdle': '只有在未运行游戏时才能设置友军伤害和生命回复',
+      'host.restartRequiredForModCollection':
+          '当前运行中的游戏没有加载所选模组集合。请关闭游戏后重新启动 BFII 主机服，让 KYBER 使用所选模组启动。',
       'host.failedToStartServer': '启动服务器失败：{message}',
       'host.unexpectedStartServerError': '启动服务器时发生了意外错误',
       'host.description': '描述',
       'host.descriptionPlaceholder': '服务器描述',
       'host.server.section': '服务器',
-      'host.authMode': '认证模式',
+      'host.authMode': '开服模式',
       'host.port': '端口',
       'host.portPlaceholder': '25200',
       'host.invalidPort': '请输入有效端口（1-65535）',
       'host.customPortOnlineUnsupported':
-          '自定义端口当前只能用于离线/LAN 模式。在线注册仍然使用 25200 端口。',
-      'host.offline': '离线',
-      'host.online': '在线',
+          '自定义端口当前只能用于直连 BFII 主机服模式。Official Kyber 模式仍然固定使用 25200 端口。',
+      'host.offline': '直连',
+      'host.dedicatedLanMode': '直连 BFII 主机服',
+      'host.online': '官方 Kyber',
       'host.maxPlayers': '最大玩家数',
       'host.maxSpectators': '最大观战数',
       'host.proximityChat': '近距离语音',
@@ -625,9 +921,17 @@ class AppLocalizations {
       'host.ingame.changeMap': '更换地图',
       'host.ingame.pauseTimer': '暂停计时器',
       'maxima.gameLaunching': '正在启动游戏',
+      'maxima.dedicatedLaunching': '正在启动 BFII 主机服',
       'maxima.updatingModule': '正在更新 Kyber 模块...',
       'maxima.startingGame': '正在启动游戏...',
+      'maxima.startingDedicated': '正在启动 BFII 主机服...',
+      'maxima.progress.prepareModule': '正在准备内置 KYBER 模块...',
+      'maxima.progress.preloadMods': '正在预加载所选模组...',
+      'maxima.progress.checkService': '正在检查 Maxima 后台服务...',
+      'maxima.progress.launchBfii': '正在通过 Maxima 请求启动 BFII 主机进程...',
       'maxima.startingGameDescription': '请稍候，游戏正在启动中。这可能需要几秒钟。',
+      'maxima.startingDedicatedDescription':
+          '请稍候，BFII 主机服进程正在启动。启动成功后，开服页面会显示服务器控制面板。',
       'maxima.failedToUpdateModule': '更新 Kyber 模块失败：{message}',
       'maxima.failedToStartGame': '启动游戏失败：{message}',
       'maxima.failedToStartGameTitle': '启动游戏失败',

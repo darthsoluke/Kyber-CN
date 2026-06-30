@@ -51,15 +51,20 @@ func NewDiscordAuthState(store *db.Store, discordCache *cache.DiscordAuthCache) 
 	}
 
 	return &DiscordAuthState{
-		store:        store,
-		discordOAuth: discordOAuth,
-		stateStore:   discordCache,
+		store:         store,
+		discordHelper: discord.NewHelper(),
+		discordOAuth:  discordOAuth,
+		stateStore:    discordCache,
 	}
 }
 
 func (s *DiscordAuthState) AuthHandler(w http.ResponseWriter, r *http.Request) {
 	if s.discordOAuth == nil {
 		http.Error(w, "Discord OAuth is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if s.stateStore == nil {
+		http.Error(w, "Discord OAuth state cache is not configured", http.StatusServiceUnavailable)
 		return
 	}
 
@@ -103,6 +108,14 @@ func (s *DiscordAuthState) AuthHandler(w http.ResponseWriter, r *http.Request) {
 func (s *DiscordAuthState) CallbackHandler(w http.ResponseWriter, r *http.Request) {
 	if s.discordOAuth == nil {
 		http.Error(w, "Discord OAuth is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if s.discordHelper == nil {
+		http.Error(w, "Discord bot is not configured", http.StatusServiceUnavailable)
+		return
+	}
+	if s.stateStore == nil {
+		http.Error(w, "Discord OAuth state cache is not configured", http.StatusServiceUnavailable)
 		return
 	}
 

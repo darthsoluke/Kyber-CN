@@ -5,7 +5,6 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:grpc/grpc.dart' hide Server;
 import 'package:kyber/kyber.dart';
-import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -30,7 +29,7 @@ class IngameViewCubit extends Cubit<IngameViewState> {
   void unloadServer() {
     _logger.info('Unloading server');
 
-    _channel?.sink.close();
+    unawaited(_channel?.sink.close());
     _keepAliveTimer?.cancel();
 
     emit(const IngameViewState());
@@ -81,8 +80,10 @@ class IngameViewCubit extends Cubit<IngameViewState> {
 
       _logger.info('Subscribing to server events');
 
+      final url = service.webSocketUri('/ws/client/${server.id}');
+      _logger.info('Subscribing to server events at $url');
       _channel = IOWebSocketChannel.connect(
-        'wss://api.${Preferences.admin.apiEnv}.kyber.gg/ws/client/${server.id}',
+        url,
         headers: {
           'Authorization': service.token,
         },
@@ -106,7 +107,7 @@ class IngameViewCubit extends Cubit<IngameViewState> {
                 ..add(data.console.message);
               emit(state.copyWith(commands: commands));
             }
-          } catch (e, s) {
+          } on Object catch (e, s) {
             _logger.severe('Error parsing event', e, s);
           }
         },
@@ -160,7 +161,7 @@ class IngameViewCubit extends Cubit<IngameViewState> {
         severity: InfoBarSeverity.error,
       );
       unloadServer();
-    } catch (e, s) {
+    } on Object catch (e, s) {
       _logger.severe('Error loading server:', e, s);
       NotificationService.showNotification(
         title: 'Server error',

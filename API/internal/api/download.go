@@ -26,6 +26,11 @@ func NewDownloadManager(minio *minio.Client) *DownloadManager {
 }
 
 func (d *DownloadManager) DownloadHandler(w http.ResponseWriter, r *http.Request) {
+	if d.minio == nil {
+		http.Error(w, "Download storage is not configured", http.StatusServiceUnavailable)
+		return
+	}
+
 	obj := mux.Vars(r)["obj"]
 	branch := r.URL.Query().Get("branch")
 

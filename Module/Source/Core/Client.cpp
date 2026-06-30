@@ -14,6 +14,12 @@
 
 namespace Kyber
 {
+namespace
+{
+// Keep proxy dispatch disabled until official and self-host proxy joins have E2E coverage.
+constexpr bool kEnableProxiedConnect = false;
+}
+
 Client::Client()
     : m_joining(false)
     , m_spectator(false)
@@ -39,11 +45,13 @@ void Client::HandleClientServerJoin(NetworkCreatePlayerMessage* message)
 {
     if (!m_joining && !m_connected && !g_program->m_server->m_runningHosted)
     {
+        KYBER_LOG(Debug, "LAN_STAGE[client.auth.skip] reason=not_joining_or_hosted");
         return;
     }
 
     if (!g_program->m_server->m_onlineMode)
     {
+        KYBER_LOG(Info, "LAN_STAGE[client.auth.skip] reason=offline_lan_mode player=" << message->playerName);
         return;
     }
 
@@ -98,30 +106,44 @@ void Client::QueueInitialJoin(
     m_pendingJoinSpectate = spectate;
     m_pendingJoinProxied = proxied;
     m_hasPendingJoin = true;
+    KYBER_LOG(Info, "LAN_STAGE[client.initial_join.queued] id=" << id << " ip=" << ip << ":" << port
+                                                                 << " passwordPresent=" << !password.empty()
+                                                                 << " spectate=" << spectate << " proxied=" << proxied);
 }
 
 void Client::ProcessPendingJoin()
 {
     if (!m_hasPendingJoin)
     {
+        KYBER_LOG(Debug, "LAN_STAGE[client.initial_join.none]");
         return;
     }
 
     m_hasPendingJoin = false;
+    KYBER_LOG(Info, "LAN_STAGE[client.initial_join.process] id=" << m_currentServerId << " ip=" << m_serverIp << ":" << m_serverPort
+                                                                  << " spectate=" << m_pendingJoinSpectate
+                                                                  << " proxied=" << m_pendingJoinProxied);
     JoinServer(m_currentServerId, m_serverIp, m_serverPort, m_serverPassword, m_pendingJoinSpectate, m_pendingJoinProxied, false);
 }
 
 void Client::JoinServer(
     const std::string& id, std::string ip, uint16_t port, const std::string& password, bool spectate, bool proxied, bool changeState)
 {
-    if (!id.empty() && !IsLanServerId(id))
+    const bool isLanServerId = IsLanServerId(id);
+    KYBER_LOG(Info, "LAN_STAGE[client.join.classify] id=" << id << " isLanId=" << isLanServerId << " ip=" << ip << ":" << port
+                                                           << " passwordPresent=" << !password.empty() << " spectate=" << spectate
+                                                           << " proxied=" << proxied << " changeState=" << changeState);
+
+    if (!id.empty() && !isLanServerId)
     {
+        KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.start] id=" << id);
         auto server = g_program->GetAPI()->GetServerBrowser()->GetServer(id);
         if (!server)
         {
-            KYBER_LOG(Error, "[Client] Server " << id << " not found, connection failed!");
+            KYBER_LOG(Error, "LAN_STAGE[client.join.official_lookup.failed] id=" << id);
             return;
         }
+        KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.ok] id=" << id);
 
         auto meta = server->meta();
         auto proxy_id_it = meta.find("pinned_proxy_id");
@@ -133,19 +155,26 @@ void Client::JoinServer(
                 if (proxy.id() == proxy_id_it->second)
                 {
                     ip = proxy.ip();
-                    KYBER_LOG(Info, "[Client] Overriding with pinned proxy '" << proxy.id() << "'");
+                    KYBER_LOG(Info, "LAN_STAGE[client.join.pinned_proxy] proxyId=" << proxy.id() << " ip=" << ip);
                     break;
                 }
             }
         }
     }
+    else
+    {
+        KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.skip] reason=" << (isLanServerId ? "lan_id" : "empty_id"));
+    }
 
     ClientSettings* clientSettings = Settings<ClientSettings>("Client");
     clientSettings->ServerIp = StringUtils::CopyWithArena(ip);
+    KYBER_LOG(Info, "LAN_STAGE[client.join.settings_applied] serverIp=" << ip << " serverPort=" << port);
 
-    const std::string socketServerName = IsLanServerId(id) ? "" : id;
+    const std::string socketServerName = isLanServerId ? "" : id;
     SocketSpawnInfo info(proxied, proxied ? ip : "", socketServerName, "");
     g_program->m_server->m_socketSpawnInfo = info;
+    KYBER_LOG(Info, "LAN_STAGE[client.join.socket_info] serverName=" << socketServerName << " proxyAddress=" << (proxied ? ip : "")
+                                                                      << " isProxied=" << proxied);
     m_currentServerId = id;
     m_serverIp = ip;
     m_serverPort = port;
@@ -157,8 +186,11 @@ void Client::JoinServer(
                                                << ", Spectate: " << spectate << ", ChangeState: " << changeState << "]");
 
     Settings<NetworkSettings>("Network")->ServerPort = port;
+    KYBER_LOG(Info, "LAN_STAGE[client.join.final] id=" << id << " ip=" << ip << ":" << port << " isLanId=" << isLanServerId
+                                                        << " onlineMode=" << g_program->m_server->m_onlineMode);
     if (changeState)
     {
+        KYBER_LOG(Info, "LAN_STAGE[client.join.change_state] target=Startup");
         ChangeClientState(ClientState_Startup);
     }
 }
@@ -274,6 +306,8 @@ __int64 ClientStateChangeHk(__int64 inst, ClientState currentClientState, Client
 
             KYBER_LOG(Info, "[Client] Re-applying join target " << g_program->m_client->m_serverIp << ":"
                                                                 << g_program->m_client->m_serverPort);
+            KYBER_LOG(Info, "LAN_STAGE[client.state.connect_target.reapply] ip=" << g_program->m_client->m_serverIp << ":"
+                                                                                  << g_program->m_client->m_serverPort);
         }
     }
     else if (currentClientState == ClientState_Ingame)
@@ -349,11 +383,16 @@ bool ClientInitNetworkHk(__int64 inst, bool singleplayer, bool localhost, bool c
     static const auto trampoline = HookManager::Call(ClientInitNetworkHk);
     KYBER_LOG(Info, "[Client] Client is initializing network, singleplayer: " << singleplayer << ", localhost: " << localhost
                                                                                << ", hosted: " << hosted);
+    KYBER_LOG(Info, "LAN_STAGE[client.network.init] singleplayer=" << singleplayer << " localhost=" << localhost
+                                                                    << " hosted=" << hosted
+                                                                    << " runningHosted=" << g_program->m_server->m_runningHosted
+                                                                    << " targetIp=" << Settings<ClientSettings>("Client")->ServerIp);
     if (g_program->m_server->m_runningHosted || strlen(Settings<ClientSettings>("Client")->ServerIp) > 0)
     {
         *reinterpret_cast<void**>(inst + 0xA8) =
             reinterpret_cast<void*>(new SocketManagerCreator(&g_program->m_client->m_socketManager, g_program->m_server->m_socketSpawnInfo));
         KYBER_LOG(Info, "[Client] Using custom socket manager");
+        KYBER_LOG(Info, "LAN_STAGE[client.network.socket_manager] custom=1");
     }
     return trampoline(inst, singleplayer, localhost, coop, hosted);
 }
@@ -367,6 +406,7 @@ void ClientConnectToAddressHk(__int64 inst, const char* ipAddress, const char* s
     if (g_program->m_client->m_joining && !g_program->m_client->m_serverPassword.empty())
     {
         connectPassword = StringUtils::CopyWithArena(g_program->m_client->m_serverPassword);
+        KYBER_LOG(Info, "LAN_STAGE[client.connect.password_override] passwordPresent=1");
     }
 
     std::string customConnectAddress;
@@ -374,16 +414,20 @@ void ClientConnectToAddressHk(__int64 inst, const char* ipAddress, const char* s
     {
         customConnectAddress = g_program->m_client->m_serverIp + ":" + std::to_string(g_program->m_client->m_serverPort);
         connectAddress = customConnectAddress.c_str();
+        KYBER_LOG(Info, "LAN_STAGE[client.connect.address_override] original=" << ipAddress << " target=" << connectAddress);
     }
 
-    if (false && g_program->m_client->m_joining && info.isProxied)
+    if (kEnableProxiedConnect && g_program->m_client->m_joining && info.isProxied)
     {
         KYBER_LOG(Info, "[Client] Connecting to server (proxied)");
+        KYBER_LOG(Info, "LAN_STAGE[client.connect.dispatch] mode=proxied target=" << info.proxyAddress << ":25201");
         trampoline(inst, (std::string(info.proxyAddress) + ":25201").c_str(), connectPassword);
     }
     else
     {
         KYBER_LOG(Info, "[Client] Connecting to server " << connectAddress);
+        KYBER_LOG(Info, "LAN_STAGE[client.connect.dispatch] mode=direct target=" << connectAddress
+                                                                                 << " passwordPresent=" << (connectPassword != nullptr && strlen(connectPassword) > 0));
         trampoline(inst, connectAddress, connectPassword);
     }
 
@@ -391,6 +435,7 @@ void ClientConnectToAddressHk(__int64 inst, const char* ipAddress, const char* s
     {
         g_program->m_client->m_connected = true;
         g_program->m_client->m_joining = false;
+        KYBER_LOG(Info, "LAN_STAGE[client.connect.state] joining=0 connected=1");
     }
 }
 
@@ -471,6 +516,7 @@ __int64 ClientAuthHk(__int64 a1, OnlineId* a2, unsigned int a3)
     static const auto trampoline = HookManager::Call(ClientAuthHk);
     __int64 result = trampoline(a1, a2, a3);
     KYBER_LOG(Info, "[Client] Joining server authenticated as " << a2->m_nativeData << " " << a2->m_id << " " << a3);
+    KYBER_LOG(Info, "LAN_STAGE[client.auth.engine] nativeId=" << a2->m_nativeData << " name=" << a2->m_id << " flags=" << a3);
     return result;
 }
 

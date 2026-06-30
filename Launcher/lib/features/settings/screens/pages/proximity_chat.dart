@@ -3,7 +3,7 @@ import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/core/services/voip_service.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/settings/screens/settings.dart';
 import 'package:kyber_launcher/features/settings/widgets/voip_key_picker.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -32,7 +32,7 @@ class ProximityChat extends StatelessWidget {
                   value: Preferences.general.ingameHotkeyEnabled,
                   onChange: (value) async {
                     Preferences.general.ingameHotkeyEnabled = value;
-                    if (sl.isRegistered<MaximaGameInstance>()) {
+                    if (sl.get<MaximaInstanceService>().hasInstances) {
                       NotificationService.showNotification(
                         message: l10n.text('settings.restartGameToApply'),
                       );

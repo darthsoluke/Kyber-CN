@@ -5,7 +5,9 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"net"
 	"slices"
+	"strings"
 	"time"
 
 	"github.com/ArmchairDevelopers/Kyber/API/api/v1/pbapi"
@@ -25,6 +27,7 @@ import (
 	"go.uber.org/zap"
 	"google.golang.org/grpc/codes"
 	"google.golang.org/grpc/metadata"
+	"google.golang.org/grpc/peer"
 	"google.golang.org/grpc/status"
 )
 
@@ -110,6 +113,37 @@ func NewServerBrowserServer(store *db.Store, sm *ws.ServerManager, client mq.Cli
 	go srv.cleanupStaleServers()
 
 	return srv
+}
+
+func requesterIP(ctx context.Context, meta metadata.MD) (string, error) {
+	if meta != nil {
+		for _, value := range meta.Get("cf-connecting-ip") {
+			ip := strings.TrimSpace(value)
+			if ip != "" {
+				return ip, nil
+			}
+		}
+	}
+
+	p, ok := peer.FromContext(ctx)
+	if !ok || p.Addr == nil {
+		return "", status.Error(codes.Unauthenticated, "Missing IP address")
+	}
+
+	addr := strings.TrimSpace(p.Addr.String())
+	if addr == "" {
+		return "", status.Error(codes.Unauthenticated, "Missing IP address")
+	}
+
+	host, _, err := net.SplitHostPort(addr)
+	if err == nil {
+		host = strings.TrimSpace(host)
+		if host != "" {
+			return host, nil
+		}
+	}
+
+	return strings.Trim(addr, "[]"), nil
 }
 
 func (s *ServerBrowserServer) CheckModImages(ctx context.Context, req *pbapi.CheckModImagesRequest) (*pbapi.CheckModImagesResponse, error) {
@@ -450,14 +484,10 @@ func (s *ServerBrowserServer) ValidateServer(_ context.Context, req *pbapi.Regis
 }
 
 func (s *ServerBrowserServer) RegisterServer(ctx context.Context, req *pbapi.RegisterServerRequest) (*pbapi.RegisterServerResponse, error) {
-	meta, exist := metadata.FromIncomingContext(ctx)
-	if !exist {
-		return nil, status.Error(codes.Unauthenticated, "Missing metadata")
-	}
-
-	addr := meta.Get("cf-connecting-ip")
-	if len(addr) == 0 {
-		return nil, status.Error(codes.Unauthenticated, "Missing IP address")
+	meta, _ := metadata.FromIncomingContext(ctx)
+	addr, err := requesterIP(ctx, meta)
+	if err != nil {
+		return nil, err
 	}
 
 	user := ctx.Value("user").(*models.UserModel)
@@ -565,7 +595,7 @@ func (s *ServerBrowserServer) RegisterServer(ctx context.Context, req *pbapi.Reg
 		PlayerCount:    0,
 		HostRegion:     hostRegion,
 		HostAddress: models.NetworkAddress{
-			IP:   addr[0],
+			IP:   addr,
 			Port: 25200,
 		},
 		LevelSetup: models.LevelSetupModel{

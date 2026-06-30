@@ -16,10 +16,21 @@ using grpc::Status;
 using namespace fastdelegate;
 using namespace kyber_interface;
 
+namespace
+{
+constexpr uint32_t kDefaultOnlineServerPort = 25200;
+}
+
 ServerUnaryReactor* ServerInterfaceService::StartServer(
     CallbackServerContext* context, const StartServerRequest* request, ServerState* response)
 {
     ServerUnaryReactor* reactor = context->DefaultReactor();
+    KYBER_LOG(Info, "LAN_STAGE[rpc.server.start_server.received] onlineModePresent=" << request->has_onlinemode()
+                                                                                     << " onlineMode="
+                                                                                     << (request->has_onlinemode() ? request->onlinemode() : true)
+                                                                                     << " requestedPort=" << request->port()
+                                                                                     << " mapRotation=" << request->maprotation_size()
+                                                                                     << " passwordPresent=" << !request->password().empty());
 
     g_program->m_server->m_mapRotation.Reset();
     for (const auto& entry : request->maprotation())
@@ -35,6 +46,7 @@ ServerUnaryReactor* ServerInterfaceService::StartServer(
     const MapRotationEntry* entry = g_program->m_server->m_mapRotation.GetNextEntry();
     if (entry == nullptr)
     {
+        KYBER_LOG(Error, "LAN_STAGE[rpc.server.start_server.invalid] reason=empty_map_rotation");
         reactor->Finish(Status(grpc::StatusCode::INVALID_ARGUMENT, "map rotation must contain at least one entry"));
         return reactor;
     }
@@ -43,15 +55,25 @@ ServerUnaryReactor* ServerInterfaceService::StartServer(
     info.mode = entry->mode;
 
     info.maxPlayers = request->maxplayers();
-    info.port = request->port() > 0 && request->port() <= 65535 ? request->port() : 25200;
+    info.port = request->port() > 0 && request->port() <= 65535 ? request->port() : kDefaultOnlineServerPort;
 
     if (request->has_onlinemode())
     {
         g_program->m_server->m_onlineMode = request->onlinemode();
     }
 
+    if (g_program->m_server->m_onlineMode)
+    {
+        info.port = kDefaultOnlineServerPort;
+    }
+
+    KYBER_LOG(Info, "LAN_STAGE[rpc.server.start_server.normalized] onlineMode=" << g_program->m_server->m_onlineMode
+                                                                                 << " requestedPort=" << request->port()
+                                                                                 << " normalizedPort=" << info.port
+                                                                                 << " level=" << info.level << " mode=" << info.mode);
     g_program->m_server->Start(info);
     response->set_port(info.port);
+    KYBER_LOG(Info, "LAN_STAGE[rpc.server.start_server.response] port=" << info.port);
 
     reactor->Finish(Status::OK);
     return reactor;

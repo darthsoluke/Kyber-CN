@@ -1,3 +1,4 @@
+import 'dart:async';
 import 'dart:io';
 
 import 'package:fluent_ui/fluent_ui.dart';
@@ -82,9 +83,9 @@ class _MaximaLoginState extends State<MaximaLogin> {
 
   void _toggleFrbDebugLogs() {
     Preferences.debug.frbDebugLogs = !Preferences.debug.frbDebugLogs;
+    final status = Preferences.debug.frbDebugLogs ? 'Enabled' : 'Disabled';
     NotificationService.info(
-      message:
-          '${Preferences.debug.frbDebugLogs ? 'Enabled' : 'Disabled'} debug logs',
+      message: '$status debug logs',
     );
   }
 
@@ -99,7 +100,7 @@ class _MaximaLoginState extends State<MaximaLogin> {
       return _WhitelistPrompt(
         displayName: state.servicePlayer?.displayName,
         onLogout: () => context.read<MaximaCubit>().logout(),
-        onAddToWhitelist: () => _handleAddToWhitelist(context),
+        onAddToWhitelist: _handleAddToWhitelist,
       );
     }
 
@@ -129,13 +130,13 @@ class _MaximaLoginState extends State<MaximaLogin> {
       return _WhitelistRequired(
         eaId: state.servicePlayer?.uniqueName,
         onLogout: () => context.read<MaximaCubit>().logout(),
-        onAuthorizePatreon: () => _handleAuthorizePatreon(context),
+        onAuthorizePatreon: _handleAuthorizePatreon,
       );
     }
 
     return _MaximaGenericError(
       error: error,
-      onCopyPath: () => _copyPath(context),
+      onCopyPath: _copyPath,
       onLogout: () => context.read<MaximaCubit>().logout(),
     );
   }
@@ -177,14 +178,16 @@ class _MaximaLoginState extends State<MaximaLogin> {
     return err;
   }
 
-  void _copyPath(BuildContext context) {
-    Clipboard.setData(ClipboardData(text: Directory.current.path));
+  void _copyPath() {
+    unawaited(
+      Clipboard.setData(ClipboardData(text: Directory.current.path)),
+    );
     NotificationService.success(
       message: 'The path has been copied to your clipboard',
     );
   }
 
-  Future<void> _handleAuthorizePatreon(BuildContext context) async {
+  Future<void> _handleAuthorizePatreon() async {
     try {
       setState(() => _loading = true);
 
@@ -208,7 +211,7 @@ class _MaximaLoginState extends State<MaximaLogin> {
         title: 'Authorization successful',
         message: 'You have been successfully authorized as a Patreon member',
       );
-    } catch (e, s) {
+    } on Object catch (e, s) {
       String? message;
       if (e is GrpcError) message = e.message;
       if (e is PatreonException) message = e.message;
@@ -221,19 +224,23 @@ class _MaximaLoginState extends State<MaximaLogin> {
         severity: InfoBarSeverity.error,
       );
     } finally {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 
-  Future<void> _handleAddToWhitelist(BuildContext context) async {
+  Future<void> _handleAddToWhitelist() async {
     setState(() => _loading = true);
     try {
       await PatreonService.addToWhitelist();
-      await Future.delayed(const Duration(milliseconds: 200));
+      await Future<void>.delayed(const Duration(milliseconds: 200));
 
-      await context.read<MaximaCubit>().requestLogin(skipMaximaCheck: true);
-    } catch (e, s) {
+      if (!mounted) return;
+      await this.context.read<MaximaCubit>().requestLogin(
+        skipMaximaCheck: true,
+      );
+    } on Object catch (e, s) {
       final message = switch (e) {
         GrpcError() => e.message ?? 'An error occurred',
         PatreonException() => e.message,
@@ -242,10 +249,13 @@ class _MaximaLoginState extends State<MaximaLogin> {
 
       Logger.root.warning('Failed to add to whitelist', e, s);
       NotificationService.error(message: message);
-      context.read<MaximaCubit>().emitError(message);
+      if (mounted) {
+        this.context.read<MaximaCubit>().emitError(message);
+      }
     } finally {
-      if (!mounted) return;
-      setState(() => _loading = false);
+      if (mounted) {
+        setState(() => _loading = false);
+      }
     }
   }
 }
@@ -261,7 +271,7 @@ class _Header extends StatelessWidget {
         color: kActiveColor,
         shadows: [
           Shadow(
-            color: kActiveColor.withOpacity(0.25),
+            color: kActiveColor.withValues(alpha: 0.25),
             offset: const Offset(0, 1),
             blurRadius: 20,
           ),
@@ -312,7 +322,10 @@ class _LoginIntro extends StatelessWidget {
       crossAxisAlignment: .start,
       children: [
         Text(
-          'In order to use this launcher, you need to login to Maxima. This is required to launch and interact with Battlefront 2.\nYou will be redirected to the EA login page and after logging in, you will be redirected back to the launcher.',
+          'In order to use this launcher, you need to login to Maxima. '
+          'This is required to launch and interact with Battlefront 2.\n'
+          'You will be redirected to the EA login page and after logging in, '
+          'you will be redirected back to the launcher.',
           style: FluentTheme.of(context).typography.body,
         ),
         const SizedBox(height: 16),
@@ -386,7 +399,8 @@ class _WhitelistPrompt extends StatelessWidget {
         crossAxisAlignment: .start,
         children: [
           const Text(
-            'Are you sure you want to add your current account to the whitelist?',
+            'Are you sure you want to add your current account to the '
+            'whitelist?',
           ),
           const SizedBox(height: 10),
           Text('Current account: $displayName'),
@@ -426,7 +440,8 @@ class _GameNotOwned extends StatelessWidget {
         ),
         const SizedBox(height: 10),
         const Text(
-          'It seems like you do not own Battlefront 2. Please purchase the game or use another account.',
+          'It seems like you do not own Battlefront 2. Please purchase the '
+          'game or use another account.',
         ),
         const SizedBox(height: 10),
         Row(
@@ -461,20 +476,36 @@ class _MaximaGenericError extends StatelessWidget {
           Builder(
             builder: (context) {
               switch (error) {
+                case 'MaximaBackgroundServiceUnavailable':
+                  return const Text(
+                    'Maxima could not reach its local background service on '
+                    '127.0.0.1:13021. This usually means the service was not '
+                    'installed, failed to start, or was blocked by antivirus. '
+                    'Please run the launcher once as administrator and, if '
+                    'needed, add an exception for the launcher and reinstall '
+                    'it.',
+                  );
                 case 'MaximaFailedBackgroundService':
                   return const Text(
-                    'Maxima failed to start the background service. This is usually caused by an antivirus program blocking the service. Please add an exception for the launcher and reinstall it.',
+                    'Maxima failed to start the background service. This is '
+                    'usually caused by an antivirus program blocking the '
+                    'service. Please add an exception for the launcher and '
+                    'reinstall it.',
                   );
                 case 'MissingMaximaFiles':
                   return Column(
                     crossAxisAlignment: .start,
                     children: [
                       const Text(
-                        'Some files required to run Maxima are missing. This is usually caused by an antivirus program deleting the files. Please add an exception for the launcher and reinstall it.',
+                        'Some files required to run Maxima are missing. This '
+                        'is usually caused by an antivirus program deleting '
+                        'the files. Please add an exception for the launcher '
+                        'and reinstall it.',
                       ),
                       const SizedBox(height: 10),
                       const Text(
-                        "Please exclude the following folders from your antivirus' real-time protection:",
+                        'Please exclude the following folders from your '
+                        "antivirus' real-time protection:",
                       ),
                       const SizedBox(height: 5),
                       KyberInput(

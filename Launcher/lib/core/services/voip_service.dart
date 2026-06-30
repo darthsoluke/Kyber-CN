@@ -2,7 +2,7 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:kyber/gen/Proto/kyber_interface.pb.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/vivox_sdk_service.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/settings/widgets/voip_key_picker.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
@@ -115,12 +115,12 @@ class VoipService with ChangeNotifier {
   Future<void> setGameVoipSettings() async {
     notifyListeners();
 
-    if (!sl.isRegistered<MaximaGameInstance>()) {
+    final client = sl.get<MaximaInstanceService>().clientInstance;
+    if (client == null) {
       return;
     }
 
     _logger.info('Setting voip settings');
-    final client = sl.get<MaximaGameInstance>();
 
     await client.clientService.client.setVoipSettings(
       SetVoipSettingsRequest(

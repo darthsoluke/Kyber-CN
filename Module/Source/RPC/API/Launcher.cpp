@@ -12,6 +12,11 @@ namespace Kyber
 using grpc::ClientContext;
 using grpc::Status;
 
+namespace
+{
+constexpr uint32_t kDefaultOnlineServerPort = 25200;
+}
+
 LauncherInterface::LauncherInterface(std::shared_ptr<Channel> channel, AsyncRPCManager* asyncManager)
     : m_stub(LauncherCommon::NewStub(channel))
     , m_asyncManager(asyncManager)
@@ -35,11 +40,20 @@ void LauncherInterface::Initialize() const
 
     KYBER_LOG(Info, "[RPC] Initializing from launcher");
     g_program->Initialize();
+    KYBER_LOG(Info, "LAN_STAGE[rpc.launcher.initialize.received] startState=" << request.startState_case()
+                                                                              << " hasModData=" << request.has_moddata()
+                                                                              << " startupCommands=" << request.startupcommands_size());
 
     switch (request.startState_case())
     {
     case kyber_interface::InitializeRequest::kStartServer: {
         const auto& server = request.startserver();
+        KYBER_LOG(Info, "LAN_STAGE[rpc.launcher.start_server.received] onlineModePresent=" << server.has_onlinemode()
+                                                                                           << " onlineMode="
+                                                                                           << (server.has_onlinemode() ? server.onlinemode() : true)
+                                                                                           << " requestedPort=" << server.port()
+                                                                                           << " mapRotation=" << server.maprotation_size()
+                                                                                           << " passwordPresent=" << !server.password().empty());
 
         g_program->m_server->m_mapRotation.Reset();
         for (const auto& entry : server.maprotation())
@@ -56,6 +70,7 @@ void LauncherInterface::Initialize() const
         if (entry == nullptr)
         {
             KYBER_LOG(Error, "[RPC] Launcher start request is missing a map rotation entry");
+            KYBER_LOG(Error, "LAN_STAGE[rpc.launcher.start_server.invalid] reason=empty_map_rotation");
             break;
         }
 
@@ -63,7 +78,7 @@ void LauncherInterface::Initialize() const
         info.mode = entry->mode;
 
         info.maxPlayers = server.maxplayers();
-        info.port = server.port() > 0 && server.port() <= 65535 ? server.port() : 25200;
+        info.port = server.port() > 0 && server.port() <= 65535 ? server.port() : kDefaultOnlineServerPort;
 
         info.loadCommands.reserve(request.startupcommands_size());
         for (const auto& command : request.startupcommands())
@@ -76,11 +91,26 @@ void LauncherInterface::Initialize() const
             g_program->m_server->m_onlineMode = server.onlinemode();
         }
 
+        if (g_program->m_server->m_onlineMode)
+        {
+            info.port = kDefaultOnlineServerPort;
+        }
+
+        KYBER_LOG(Info, "LAN_STAGE[rpc.launcher.start_server.normalized] onlineMode=" << g_program->m_server->m_onlineMode
+                                                                                       << " requestedPort=" << server.port()
+                                                                                       << " normalizedPort=" << info.port
+                                                                                       << " level=" << info.level << " mode=" << info.mode);
         g_program->m_server->m_creationInfo = info;
         break;
     }
     case kyber_interface::InitializeRequest::kJoinServer: {
         const auto& joinServer = request.joinserver();
+        KYBER_LOG(Info, "LAN_STAGE[rpc.launcher.join_server.received] id=" << joinServer.id() << " ip=" << joinServer.ip()
+                                                                            << ":" << joinServer.port()
+                                                                            << " type=" << joinServer.type()
+                                                                            << " joinTokenPresent=" << !joinServer.jointoken().empty()
+                                                                            << " passwordPresent=" << !joinServer.password().empty()
+                                                                            << " spectate=" << joinServer.spectate());
 
         g_program->m_client->QueueInitialJoin(
             joinServer.id(),
@@ -91,10 +121,14 @@ void LauncherInterface::Initialize() const
             joinServer.type() == kyber_interface::JoinServerType::PROXIED);
         g_program->m_client->m_joinToken = joinServer.jointoken();
         g_program->m_server->m_onlineMode = !joinServer.jointoken().empty();
+        KYBER_LOG(Info, "LAN_STAGE[rpc.launcher.join_server.normalized] onlineMode=" << g_program->m_server->m_onlineMode
+                                                                                      << " reason="
+                                                                                      << (!joinServer.jointoken().empty() ? "token_present" : "no_token_lan_direct"));
         break;
     }
     case kyber_interface::InitializeRequest::STARTSTATE_NOT_SET:
         KYBER_LOG(Error, "Initialization launcher request is empty!");
+        KYBER_LOG(Error, "LAN_STAGE[rpc.launcher.initialize.invalid] reason=start_state_not_set");
         break;
     }
 
@@ -122,6 +156,9 @@ void LauncherInterface::Initialize() const
         }
 
         g_program->m_modData = modData;
+        KYBER_LOG(Info, "LAN_STAGE[rpc.launcher.moddata.loaded] mods=" << modData.serverMods.size()
+                                                                        << " explodedMods=" << modData.explodedMods.size()
+                                                                        << " paths=" << modData.modPaths.size());
     }
 
     std::unique_lock<std::mutex> lock(g_program->m_startupMutex);

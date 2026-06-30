@@ -7,6 +7,7 @@ import (
 	"encoding/pem"
 	"fmt"
 	"os"
+	"path/filepath"
 	"strings"
 	"sync"
 
@@ -51,8 +52,8 @@ func NewService() (*Service, error) {
 }
 
 func (s *Service) loadKeysFromFiles(privateKeyPath, publicKeyPath string) error {
-	privateKeyPath = fmt.Sprintf("/srv/kyber-api/jwt/%s", privateKeyPath)
-	publicKeyPath = fmt.Sprintf("/srv/kyber-api/jwt/%s", publicKeyPath)
+	privateKeyPath = resolveKeyPath(privateKeyPath)
+	publicKeyPath = resolveKeyPath(publicKeyPath)
 
 	privPEM, err := os.ReadFile(privateKeyPath)
 	if err != nil {
@@ -101,6 +102,19 @@ func (s *Service) loadKeysFromFiles(privateKeyPath, publicKeyPath string) error 
 	s.publicKey = pubKey
 
 	return nil
+}
+
+func resolveKeyPath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
+	}
+
+	baseDir := os.Getenv("JWT_KEY_DIR")
+	if baseDir == "" {
+		baseDir = "/srv/kyber-api/jwt"
+	}
+
+	return filepath.Join(baseDir, path)
 }
 
 func (s *Service) generateKeys() error {

@@ -24,10 +24,11 @@ class ServerBackgroundImage extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     final image = MapHelper.getImageForMap(map);
+    final imageId = this.imageId;
     if (!fade) {
       return ColorFiltered(
         colorFilter: ColorFilter.mode(
-          Colors.black.withOpacity(0.7),
+          Colors.black.withValues(alpha: 0.7),
           BlendMode.srcATop,
         ),
         child: ImageFiltered(
@@ -38,8 +39,7 @@ class ServerBackgroundImage extends StatelessWidget {
           ),
           child: imageId != null
               ? CachedNetworkImage(
-                  imageUrl:
-                      'https://${sl.get<KyberGRPCService>().httpHostname}/images/$imageId.jpeg',
+                  imageUrl: sl.get<KyberGRPCService>().imageUrl(imageId),
                   height: 200,
                   fit: BoxFit.cover,
                   placeholder: (context, url) =>
@@ -67,7 +67,7 @@ class ServerBackgroundImage extends StatelessWidget {
           end: .topCenter,
           colors: [
             Colors.transparent,
-            Colors.black.withOpacity(.4),
+            Colors.black.withValues(alpha: .4),
           ],
         ).createShader(Rect.fromLTRB(0, 0, rect.width, rect.height));
       },

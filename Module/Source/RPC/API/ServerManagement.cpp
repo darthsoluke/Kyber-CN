@@ -3,6 +3,7 @@
 
 #include <RPC/API/ServerManagement.h>
 #include <Core/Program.h>
+#include <Utilities/PlatformUtils.h>
 
 #include <ixwebsocket/IXNetSystem.h>
 #include <ixwebsocket/IXWebSocket.h>
@@ -32,7 +33,16 @@ void ServerManagementAPI::Connect(const std::string& serverId)
 
     m_serverId = serverId;
 
-    m_webSocket->setUrl("ws://" + m_apiUri + "/ws/server/" + serverId);
+    std::string wsScheme = PlatformUtils::GetEnv("KYBER_WS_SCHEME", "ws");
+    if (wsScheme != "ws" && wsScheme != "wss")
+    {
+        KYBER_LOG(Warning, "LAN_STAGE[server.management.scheme.invalid] scheme=" << wsScheme << " fallback=ws");
+        wsScheme = "ws";
+    }
+
+    const std::string url = wsScheme + "://" + m_apiUri + "/ws/server/" + serverId;
+    KYBER_LOG(Info, "LAN_STAGE[server.management.connect] url=" << url);
+    m_webSocket->setUrl(url);
 
     ix::WebSocketHttpHeaders headers;
     headers["Authorization"] = m_token;

@@ -5,16 +5,15 @@ import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
-import 'package:kyber_launcher/features/download_manager/models/download_request.dart';
-import 'package:kyber_launcher/features/download_manager/services/download_orchestrator.dart';
-import 'package:kyber_launcher/features/kyber/helper/kyber_status_helper.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_api_status_cubit.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_status_cubit.dart';
 import 'package:kyber_launcher/features/kyber/services/kyber_grpc_service.dart';
 import 'package:kyber_launcher/features/kyber/widgets/api_status_box.dart';
+import 'package:kyber_launcher/features/launcher_mode/models/launcher_mode.dart';
+import 'package:kyber_launcher/features/launcher_mode/providers/launcher_mode_cubit.dart';
 import 'package:kyber_launcher/features/lightswitch/models/status.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/navigation_bar/dialogs/confirm_close_dialog.dart';
 import 'package:kyber_launcher/features/navigation_bar/helper/drag_and_drop_handler.dart';
 import 'package:kyber_launcher/features/navigation_bar/helper/protocol_helper.dart';
@@ -50,6 +49,7 @@ class NavigationBar extends StatefulWidget {
 class _NavigationBarState extends State<NavigationBar>
     with ProtocolListener, WindowListener {
   bool isDragging = false;
+  LauncherMode? _initializedMode;
 
   @override
   void initState() {
@@ -67,7 +67,7 @@ class _NavigationBarState extends State<NavigationBar>
   void _deferredInitialization() {
     Timer.run(() async {
       if (!context.read<StatusCubit>().state.initialized) return;
-      await AppInitializationService.initialize(context);
+      await _initializeForSelectedMode();
     });
   }
 
@@ -84,7 +84,7 @@ class _NavigationBarState extends State<NavigationBar>
     if (!mounted) return;
 
     if (isPreventClose) {
-      if (!sl.isRegistered<MaximaGameInstance>()) {
+      if (!sl.get<MaximaInstanceService>().hasInstances) {
         await windowManager.destroy();
         return;
       }
@@ -101,11 +101,15 @@ class _NavigationBarState extends State<NavigationBar>
 
   @override
   Widget build(BuildContext context) {
-    return KeyboardShortcutsWrapper(
-      child: BlocConsumer<StatusCubit, ApplicationStatus>(
-        listenWhen: (prev, state) => prev.initialized != state.initialized,
-        listener: _handleStatusChange,
-        builder: (context, state) => _buildContent(state),
+    return BlocListener<LauncherModeCubit, LauncherModeState>(
+      listenWhen: (previous, current) => previous.mode != current.mode,
+      listener: (_, __) => unawaited(_initializeForSelectedMode()),
+      child: KeyboardShortcutsWrapper(
+        child: BlocConsumer<StatusCubit, ApplicationStatus>(
+          listenWhen: (prev, state) => prev.initialized != state.initialized,
+          listener: _handleStatusChange,
+          builder: (context, state) => _buildContent(state),
+        ),
       ),
     );
   }
@@ -116,8 +120,7 @@ class _NavigationBarState extends State<NavigationBar>
   ) async {
     if (!state.initialized) return;
 
-    await AppInitializationService.initialize(context);
-    await AppInitializationService.startServices(context);
+    await _initializeForSelectedMode();
   }
 
   Widget _buildContent(ApplicationStatus state) {
@@ -126,7 +129,8 @@ class _NavigationBarState extends State<NavigationBar>
       listenWhen: (prev, state) =>
           prev.status == .down && state.status != .down,
       builder: (context, apiState) {
-        if (apiState.status == .down) {
+        final modeState = context.watch<LauncherModeCubit>().state;
+        if (apiState.status == .down && !modeState.isDedicatedOnly) {
           return const ApiStatusBox();
         }
 
@@ -144,11 +148,33 @@ class _NavigationBarState extends State<NavigationBar>
     LightswitchStatus apiState,
   ) {
     if (apiState.status == .down) return;
+    if (context.read<LauncherModeCubit>().state.isDedicatedOnly) return;
 
     final state = context.read<StatusCubit>().state;
     if (state.initialized) {
       context.read<MaximaCubit>().requestLogin();
     }
+  }
+
+  Future<void> _initializeForSelectedMode() async {
+    if (!mounted || !context.read<StatusCubit>().state.initialized) {
+      return;
+    }
+
+    final mode = context.read<LauncherModeCubit>().state.mode;
+    if (mode == null || _initializedMode == mode) {
+      return;
+    }
+
+    _initializedMode = mode;
+    if (mode.isDedicatedOnly) {
+      await AppInitializationService.initializeDedicated(context);
+      await AppInitializationService.startDedicatedServices(context);
+      return;
+    }
+
+    await AppInitializationService.initialize(context);
+    await AppInitializationService.startServices(context);
   }
 
   Widget _buildMainContent() {

@@ -47,8 +47,13 @@ namespace Kyber
 constexpr uint32_t kDefaultServerPort = 25200;
 constexpr uint32_t kDefaultMaxSpectatorCount = 4;
 
-static uint32_t NormalizeServerPort(uint32_t port)
+static uint32_t NormalizeServerPort(uint32_t port, bool onlineMode)
 {
+    if (onlineMode)
+    {
+        return kDefaultServerPort;
+    }
+
     if (port == 0 || port > 65535)
     {
         return kDefaultServerPort;
@@ -224,7 +229,11 @@ void Server::Initialize()
 
 void Server::ApplyRuntimeSettings(const ServerCreationInfo& info)
 {
-    const uint32_t serverPort = NormalizeServerPort(info.port);
+    const uint32_t serverPort = NormalizeServerPort(info.port, m_onlineMode);
+    KYBER_LOG(Info, "LAN_STAGE[server.runtime.apply] name=" << info.name << " onlineMode=" << m_onlineMode << " requestedPort=" << info.port
+                                                            << " normalizedPort=" << serverPort << " maxPlayers=" << info.maxPlayers
+                                                            << " level=" << info.level << " mode=" << info.mode
+                                                            << " passwordPresent=" << !info.password.empty());
 
     if (NetworkSettings* networkSettings = Settings<NetworkSettings>("Network"))
     {
@@ -262,7 +271,10 @@ void Server::ApplyRuntimeSettings(const ServerCreationInfo& info)
 void Server::Start(const ServerCreationInfo& info, bool changeState)
 {
     ServerCreationInfo normalizedInfo = info;
-    normalizedInfo.port = NormalizeServerPort(info.port);
+    normalizedInfo.port = NormalizeServerPort(info.port, m_onlineMode);
+    KYBER_LOG(Info, "LAN_STAGE[server.start.request] onlineMode=" << m_onlineMode << " changeState=" << changeState << " requestedPort="
+                                                                  << info.port << " normalizedPort=" << normalizedInfo.port
+                                                                  << " level=" << normalizedInfo.level << " mode=" << normalizedInfo.mode);
 
     EnableGameHooks();
 
@@ -270,9 +282,15 @@ void Server::Start(const ServerCreationInfo& info, bool changeState)
 
     m_creationInfo = normalizedInfo;
     m_heartbeatTimer = 0.f;
-    if (m_lanDiscovery)
+    if (!m_onlineMode && m_lanDiscovery)
     {
+        KYBER_LOG(Info, "LAN_STAGE[server.discovery.start_decision] action=start reason=offline_lan");
         m_lanDiscovery->Start();
+    }
+    else if (m_onlineMode && m_lanDiscovery)
+    {
+        KYBER_LOG(Info, "LAN_STAGE[server.discovery.start_decision] action=stop reason=online_mode");
+        m_lanDiscovery->Stop();
     }
 
     if (!m_onlineMode)
@@ -284,21 +302,41 @@ void Server::Start(const ServerCreationInfo& info, bool changeState)
 
         m_serverId.clear();
         g_program->GetAPI()->GetServerManagement()->Disconnect();
+        KYBER_LOG(Info, "LAN_STAGE[server.registration.skip] reason=offline_lan");
     }
 
-    g_program->m_server->Register(true);
-
-
-    if (m_serverId.empty())
+    if (m_onlineMode)
     {
+        KYBER_LOG(Info, "LAN_STAGE[server.registration.dispatch] onlineMode=" << m_onlineMode << " force=1");
+        g_program->m_server->Register(true);
+    }
+
+    if (m_onlineMode && m_serverId.empty())
+    {
+        KYBER_LOG(Info, "LAN_STAGE[server.registration.result] id_empty=1 forcingOffline=1");
         m_onlineMode = false;
+        if (m_lanDiscovery)
+        {
+            KYBER_LOG(Info, "LAN_STAGE[server.discovery.start_decision] action=start reason=registration_failed_forced_offline");
+            m_lanDiscovery->Start();
+        }
+    }
+    else if (!m_serverId.empty())
+    {
+        KYBER_LOG(Info, "LAN_STAGE[server.registration.result] id=" << m_serverId);
+    }
+    else
+    {
+        KYBER_LOG(Info, "LAN_STAGE[server.registration.result] skipped_offline=1");
     }
 
     m_socketSpawnInfo = SocketSpawnInfo(false, "", m_serverId, "");
+    KYBER_LOG(Info, "LAN_STAGE[server.socket_info] serverName=" << m_serverId << " onlineMode=" << m_onlineMode);
 
     if (m_runningHosted)
     {
         m_restarting = true;
+        KYBER_LOG(Info, "LAN_STAGE[server.start.restart] restarting=1");
     }
 
     if (changeState)
@@ -311,6 +349,7 @@ void Server::Start(const ServerCreationInfo& info, bool changeState)
 
     m_hooksRemoved = false;
     m_runningHosted = true;
+    KYBER_LOG(Info, "LAN_STAGE[server.start.running] runningHosted=1 onlineMode=" << m_onlineMode << " port=" << normalizedInfo.port);
 }
 
 void Server::KickPlayer(ServerPlayer* player, const char* reason)
@@ -371,7 +410,7 @@ bool ServerSendChatMessageHk(ChatChannel channel, const char* message, const Ser
     if (channel == ChatChannel_Admin && player->m_teamId != kServerTeamAdminMarker)
     {
         KYBER_LOG(Warning, "[Server] Player '" << player->m_name << "' (id: " << player->m_onlineId.m_nativeData
-                                      << ") attempted to send admin chat message: " << message);
+                                               << ") attempted to send admin chat message: " << message);
         return false;
     }
 
@@ -407,7 +446,11 @@ void Server::SetDedicatedCreationInfo(const ServerCreationInfo& info)
         return;
     }
 
-    m_creationInfo = info;
+    ServerCreationInfo normalizedInfo = info;
+    normalizedInfo.port = NormalizeServerPort(info.port, m_onlineMode);
+    m_creationInfo = normalizedInfo;
+    KYBER_LOG(Info, "LAN_STAGE[server.dedicated.creation_info] onlineMode=" << m_onlineMode << " requestedPort=" << info.port
+                                                                            << " normalizedPort=" << normalizedInfo.port);
 }
 
 __int64 ServerCtorHk(void* inst, ServerSpawnInfo& info, SocketManager* socketManager)
@@ -422,6 +465,8 @@ __int64 ServerCtorHk(void* inst, ServerSpawnInfo& info, SocketManager* socketMan
     // Hosted LAN/offline sessions should still bind to a network-reachable address.
     // isLocalHost affects the engine's socket binding behavior, not just presence.
     info.isLocalHost = false;
+    KYBER_LOG(Info, "LAN_STAGE[server.ctor.bind_mode] isLocalHost=0 dedicated=" << g_program->m_isDedicatedServer
+                                                                                << " onlineMode=" << g_program->m_server->m_onlineMode);
 
     if (g_program->m_isDedicatedServer)
     {
@@ -433,7 +478,9 @@ __int64 ServerCtorHk(void* inst, ServerSpawnInfo& info, SocketManager* socketMan
     g_program->m_server->m_playerManager = info.playerManager;
     g_program->m_server->m_serverInstance = inst;
     KYBER_LOG(Info, "[Server] Constructing a " << info.tickFrequency << "hz server " << info.levelSetup.Name);
-    
+    KYBER_LOG(Info, "LAN_STAGE[server.ctor] tick=" << info.tickFrequency << " level=" << info.levelSetup.Name << " port=" << info.serverPort
+                                                   << " hooked=" << !g_program->m_server->m_hooksRemoved);
+
     if (g_program->m_scriptManager != nullptr)
     {
         g_program->m_scriptManager->GetEventManager().Fire("Server:Init");
@@ -448,9 +495,12 @@ __int64 ServerStartHk(__int64 inst, ServerSpawnInfo& info, __int64 spawnOverride
     Server* server = g_program->m_server;
 
     KYBER_LOG(Info, "[Server] Starting server " << info.levelSetup.Name << " (Hooked: " << !server->m_hooksRemoved << ")");
+    KYBER_LOG(Info, "LAN_STAGE[server.hook.start] level=" << info.levelSetup.Name << " requestedPort=" << info.serverPort << " onlineMode="
+                                                          << server->m_onlineMode << " hooked=" << !server->m_hooksRemoved);
 
     if (server->m_hooksRemoved)
     {
+        KYBER_LOG(Info, "LAN_STAGE[server.hook.start.skip] reason=hooks_removed");
         return trampoline(inst, info, spawnOverrides, socketManager);
     }
 
@@ -459,11 +509,14 @@ __int64 ServerStartHk(__int64 inst, ServerSpawnInfo& info, __int64 spawnOverride
         socketManager = server->m_socketManager;
         socketManager->m_info = server->m_socketSpawnInfo;
         KYBER_LOG(Info, "[Server] Server is using custom socket manager");
+        KYBER_LOG(Info, "LAN_STAGE[server.hook.socket_manager] custom=1 serverName=" << server->m_socketSpawnInfo.serverName
+                                                                                     << " proxied=" << server->m_socketSpawnInfo.isProxied);
     }
 
     if (server->m_creationInfo)
     {
-        info.serverPort = NormalizeServerPort(server->m_creationInfo->port);
+        info.serverPort = NormalizeServerPort(server->m_creationInfo->port, server->m_onlineMode);
+        KYBER_LOG(Info, "LAN_STAGE[server.hook.port.apply] port=" << info.serverPort << " onlineMode=" << server->m_onlineMode);
     }
 
     __int64 result = trampoline(inst, info, spawnOverrides, socketManager);
@@ -475,6 +528,7 @@ __int64 ServerStartHk(__int64 inst, ServerSpawnInfo& info, __int64 spawnOverride
     }
 
     KYBER_LOG(Info, "[Server] Server started");
+    KYBER_LOG(Info, "LAN_STAGE[server.hook.started] port=" << info.serverPort << " onlineMode=" << server->m_onlineMode);
 
     return result;
 }
@@ -485,7 +539,7 @@ __int64 SettingsManagerApplyHk(__int64 inst, __int64* a2, char* script, BYTE* a4
     __int64 result = trampoline(inst, a2, script, a4);
 
     Settings<MeshStreamingSettings>("MeshStreaming")->PoolSize = 999999;
-    
+
     // Setting designed for bot balancer to ensure that AutoBalanceTeamsOnNeutral is never true.
     KyberSettings* kyberSettings = Settings<KyberSettings>("Kyber");
     if (kyberSettings != nullptr)
@@ -544,6 +598,7 @@ void PresenceBackendManagerAddBackendHk(void* inst, TypeObject* backend)
     }
 
     KYBER_LOG(Debug, "[Presence] Registering backend " << backend->getType()->getName());
+    KYBER_LOG(Debug, "LAN_STAGE[presence.backend.add] type=" << backend->getType()->getName());
     trampoline(inst, backend);
 }
 
@@ -566,6 +621,10 @@ void* CreatePresenceBackendHk(__int64* a1, __int64 a2, int backend, __int64 a4, 
     {
         backend = 0xB8566ABC; // OnlineBackend_Local
         // backend = 0xDEBD4193; // OnlineBackend_Peer
+        KYBER_LOG(Info, "LAN_STAGE[presence.backend.override] backend=OnlineBackend_Local dedicated="
+                            << g_program->m_isDedicatedServer << " onlineMode=" << g_program->m_server->m_onlineMode << " runningHosted="
+                            << g_program->m_server->m_runningHosted << " currentServerId=" << g_program->m_client->m_currentServerId
+                            << " targetIp=" << g_program->m_client->m_serverIp);
     }
 
     // NetObjectSystemSettings* netObjectSettings = Settings<NetObjectSystemSettings>("NetObjectSystem");
@@ -646,17 +705,22 @@ bool ServerConnectionOnCreatePlayerMessageHk(ServerConnection* inst, NetworkCrea
     static const auto trampoline = HookManager::Call(ServerConnectionOnCreatePlayerMessageHk);
     if (!g_program->m_server->m_runningHosted && !g_program->m_isDedicatedServer)
     {
+        KYBER_LOG(Debug, "LAN_STAGE[server.player_join.pass_through] reason=not_hosted_or_dedicated");
         return trampoline(inst, message);
     }
 
     if (!g_program->m_server->m_onlineMode)
     {
         KYBER_LOG(Info, "[Server] " << message->playerName << " joined (Spectator: " << message->isSpectator << ")");
+        KYBER_LOG(Info, "LAN_STAGE[server.player_join.offline] name=" << message->playerName << " spectator=" << message->isSpectator);
         return trampoline(inst, message);
     }
 
     // TODO: Read KyberAuthentication join token's payload to print the userId of the player joining
     KYBER_LOG(Info, "[Server] Got player join request (Spectator: " << message->isSpectator << ")");
+    KYBER_LOG(Info, "LAN_STAGE[server.player_join.online] tokenPrefixPresent="
+                        << (std::string(message->playerName).rfind("KyberAuthentication:", 0) == 0) << " spectator=" << message->isSpectator
+                        << " serverId=" << g_program->m_server->m_serverId);
 
     std::string playerName = message->playerName;
     std::string prefix = "KyberAuthentication:";
@@ -664,6 +728,7 @@ bool ServerConnectionOnCreatePlayerMessageHk(ServerConnection* inst, NetworkCrea
     if (playerName.rfind(prefix, 0) != 0)
     {
         KYBER_LOG(Info, "[Server] Kicking " << playerName.c_str() << " as they aren't authenticated");
+        KYBER_LOG(Warning, "LAN_STAGE[server.player_join.reject] reason=missing_auth_prefix");
         inst->SafeDisconnect("KYBER failed to authenticate your connection.\n\nPlease visit discord.gg/kyber for support.");
         return false;
     }
@@ -676,12 +741,14 @@ bool ServerConnectionOnCreatePlayerMessageHk(ServerConnection* inst, NetworkCrea
             if (!response)
             {
                 KYBER_LOG(Info, "[Server] Kicking " << playerName.c_str() << " as their join token was invalid");
+                KYBER_LOG(Warning, "LAN_STAGE[server.player_join.reject] reason=invalid_join_token");
                 inst->SafeDisconnect("KYBER failed to authenticate your connection.\n\nPlease visit discord.gg/kyber for support.");
                 return;
             }
 
             copiedMessage->playerName = (char*)StringUtils::CopyWithArena((*response)->name(), FB_SERVER_ARENA);
             KYBER_LOG(Info, "[Server] Join token processed, letting user join as '" << copiedMessage->playerName << "'");
+            KYBER_LOG(Info, "LAN_STAGE[server.player_join.accept] userId=" << (*response)->id() << " name=" << copiedMessage->playerName);
 
             uint64_t userId = stoull((*response)->id());
 
@@ -719,7 +786,7 @@ void Server::Heartbeat(const UpdateParameters& params)
         return;
     }
 
-    if (m_lanDiscovery)
+    if (!m_onlineMode && m_lanDiscovery)
     {
         m_lanDiscovery->Poll(*this);
     }
@@ -745,7 +812,7 @@ void Server::Heartbeat(const UpdateParameters& params)
 
     // TODO: Remove and fix SendPlayerList on disconnect
     g_program->GetAPI()->GetServerManagement()->SendPlayerList();
-    
+
     g_program->GetAPI()->GetServerManagement()->SendKeepAlive();
 }
 
@@ -753,20 +820,26 @@ void Server::Register(bool force)
 {
     if (!force && (!IsRunning() || !m_creationInfo))
     {
+        KYBER_LOG(Debug, "LAN_STAGE[server.registration.skip] reason=not_running_or_missing_creation force="
+                             << force << " running=" << IsRunning() << " hasCreation=" << m_creationInfo.has_value());
         return;
     }
 
     if (!m_onlineMode)
     {
+        KYBER_LOG(Info, "LAN_STAGE[server.registration.skip] reason=offline_lan");
         return;
     }
 
     KYBER_LOG(Info, "[Server] Attempting to register server");
+    KYBER_LOG(Info, "LAN_STAGE[server.registration.start] force=" << force << " port=" << (m_creationInfo ? m_creationInfo->port : 0)
+                                                                  << " name=" << (m_creationInfo ? m_creationInfo->name : ""));
 
     std::optional<std::string> response = g_program->GetAPI()->GetServerBrowser()->RegisterServer(m_creationInfo.value());
     if (!response)
     {
         KYBER_LOG(Error, "[Server] Failed to register server! Connecting to dummy for automatic reconnection.");
+        KYBER_LOG(Error, "LAN_STAGE[server.registration.failed] action=connect_dummy");
         // Connect to server management with a dummy server id so automatic reconnection occurs.
         g_program->GetAPI()->GetServerManagement()->Connect("DUMMY");
         return;
@@ -776,8 +849,10 @@ void Server::Register(bool force)
 
     m_serverId = response.value();
     KYBER_LOG(Info, "[Server] Registered server successfully, id: " << m_serverId);
+    KYBER_LOG(Info, "LAN_STAGE[server.registration.ok] id=" << m_serverId);
 
     g_program->GetAPI()->GetServerManagement()->Connect(m_serverId);
+    KYBER_LOG(Info, "LAN_STAGE[server.management.connect] id=" << m_serverId);
 }
 
 void Server::OnEvent(const Event& event)
@@ -789,9 +864,7 @@ void Server::OnEvent(const Event& event)
     }
 }
 
-void Server::OnSettingsRegistered()
-{
-}
+void Server::OnSettingsRegistered() {}
 
 HookTemplate clientServerHookOffsets[] = {
     { OFFSET_SERVER_CONSTRUCTOR, ServerCtorHk },
@@ -936,6 +1009,8 @@ void Server::SendConsoleMessage(const std::string& message)
 void Server::Stop()
 {
     KYBER_LOG(Info, "[Server] Stopping Kyber server...");
+    KYBER_LOG(
+        Info, "LAN_STAGE[server.stop] runningHosted=" << m_runningHosted << " onlineMode=" << m_onlineMode << " serverId=" << m_serverId);
 
     m_runningHosted = false;
     m_heartbeatTimer = 0.f;
@@ -945,8 +1020,10 @@ void Server::Stop()
     m_serverId.clear();
     g_program->GetAPI()->GetServerManagement()->Disconnect();
     m_onlineMode = IsOnlineMode();
+    KYBER_LOG(Info, "LAN_STAGE[server.stop.reset_mode] onlineMode=" << m_onlineMode);
     if (m_lanDiscovery)
     {
+        KYBER_LOG(Info, "LAN_STAGE[server.discovery.stop_decision] reason=server_stop");
         m_lanDiscovery->Stop();
     }
 

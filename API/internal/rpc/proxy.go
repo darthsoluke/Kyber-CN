@@ -5,7 +5,9 @@ import (
 
 	"github.com/ArmchairDevelopers/Kyber/API/api/v1/pbapi"
 	"github.com/ArmchairDevelopers/Kyber/API/api/v1/pbcommon"
+	"github.com/ArmchairDevelopers/Kyber/API/pkg/logger"
 	"github.com/ArmchairDevelopers/Kyber/API/pkg/util"
+	"go.uber.org/zap"
 )
 
 type ProxyServer struct {
@@ -29,7 +31,7 @@ func NewProxyServer() *ProxyServer {
 
 	err := util.LoadConfig("proxies.yaml", ypl)
 	if err != nil {
-		panic(err)
+		logger.L().Warn("Proxy list disabled; using an empty proxy list", zap.Error(err))
 	}
 
 	pbList := &pbapi.ProxyList{

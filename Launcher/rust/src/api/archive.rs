@@ -7,21 +7,24 @@ use std::cmp::Ordering;
 use std::fs::File;
 use std::io::{BufReader, Read, Write};
 use std::io::{Cursor, Sink};
+use std::path::Path;
 use std::sync::atomic::AtomicI32;
 use std::sync::{Arc, Mutex};
 use std::{fs, io};
-use std::path::Path;
 use tar::Builder;
 use tokio::task;
 use zip::write::SimpleFileOptions;
 use zip::CompressionMethod;
 
-pub async fn compress(file_paths: Vec<String>, target_file: String, mut progress_stream: StreamSink<(i32, i32)>) -> anyhow::Result<()> {
+pub async fn compress(
+    file_paths: Vec<String>,
+    target_file: String,
+    mut progress_stream: StreamSink<(i32, i32)>,
+) -> anyhow::Result<()> {
     let target = std::path::Path::new(&target_file);
     let file = File::create(target)?;
     let mut zip = zip::ZipWriter::new(file);
-    let options = SimpleFileOptions::default()
-        .compression_method(CompressionMethod::Stored);
+    let options = SimpleFileOptions::default().compression_method(CompressionMethod::Stored);
 
     let mut buffer = Vec::new();
     for (i, file_path) in file_paths.iter().enumerate() {
@@ -37,7 +40,9 @@ pub async fn compress(file_paths: Vec<String>, target_file: String, mut progress
         f.read_to_end(&mut buffer)?;
         zip.write_all(&buffer)?;
         buffer.clear();
-        progress_stream.add((i as i32, file_paths.len() as i32)).unwrap();
+        progress_stream
+            .add((i as i32, file_paths.len() as i32))
+            .unwrap();
     }
 
     zip.finish()?;
@@ -45,7 +50,11 @@ pub async fn compress(file_paths: Vec<String>, target_file: String, mut progress
     Ok(())
 }
 
-pub async fn compress_tar(file_paths: Vec<String>, target_file: String, mut progress_stream: StreamSink<(i32, i32)>) -> anyhow::Result<()> {
+pub async fn compress_tar(
+    file_paths: Vec<String>,
+    target_file: String,
+    mut progress_stream: StreamSink<(i32, i32)>,
+) -> anyhow::Result<()> {
     let target = Path::new(&target_file);
     let file = File::create(target)?;
     let mut tar_builder = Builder::new(file);
@@ -61,14 +70,15 @@ pub async fn compress_tar(file_paths: Vec<String>, target_file: String, mut prog
         tar_builder.append_file(name, &mut f)?;
         info!("File added: {}", name);
 
-        progress_stream.add((i as i32, file_paths.len() as i32)).unwrap();
+        progress_stream
+            .add((i as i32, file_paths.len() as i32))
+            .unwrap();
     }
 
     tar_builder.finish()?;
 
     Ok(())
 }
-
 
 pub async fn extract_stream(
     file_path: String,
@@ -132,8 +142,13 @@ pub async fn extract_stream(
                 let total = total_files;
 
                 if file.is_dir() {
-                    let progress = progress_counter.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
-                    progress_sink.lock().unwrap().add((progress, total)).unwrap();
+                    let progress =
+                        progress_counter.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
+                    progress_sink
+                        .lock()
+                        .unwrap()
+                        .add((progress, total))
+                        .unwrap();
                     continue;
                 }
 
@@ -176,8 +191,13 @@ pub async fn extract_stream(
                 }
 
                 // Increment the progress counter atomically
-                let progress = progress_counter.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
-                progress_sink.lock().unwrap().add((progress, total)).unwrap();
+                let progress =
+                    progress_counter.fetch_add(1, core::sync::atomic::Ordering::SeqCst) + 1;
+                progress_sink
+                    .lock()
+                    .unwrap()
+                    .add((progress, total))
+                    .unwrap();
             }
         });
         handles.push(handle);
@@ -190,7 +210,6 @@ pub async fn extract_stream(
 
     Ok(())
 }
-
 
 pub async fn extract(file_path: String, target_dir: String) -> anyhow::Result<()> {
     let fname = std::path::Path::new(&*file_path);
@@ -207,7 +226,9 @@ pub async fn extract(file_path: String, target_dir: String) -> anyhow::Result<()
             Some(path) => path.to_owned(),
             None => continue,
         };
-        let final_path = std::path::Path::new(&*target_dir).join(outpath.file_name().unwrap().to_str().unwrap()).to_owned();
+        let final_path = std::path::Path::new(&*target_dir)
+            .join(outpath.file_name().unwrap().to_str().unwrap())
+            .to_owned();
 
         info!(
             "File {} extracted to \"{}\" ({} bytes)",

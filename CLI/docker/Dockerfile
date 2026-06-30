@@ -42,11 +42,15 @@ COPY _work/vivoxsdk.dll /root/.local/share/kyber/module/vivoxsdk.dll
 COPY _work/ca_root.pem /root/.local/share/kyber/module/ca_root.pem
 COPY _work/Kyber.dll /root/.local/share/kyber/module/Kyber.dll
     
-EXPOSE 25200
+EXPOSE 25200/udp
 
 ENV MAXIMA_DISABLE_WINE_VERIFICATION=1
 ENV MAXIMA_WINE_COMMAND="/home/kyber/wine/bin/wine64"
 ENV MAXIMA_DISABLE_QRC=1
+
+# Fixed container paths. The entrypoint validates these before starting.
+ENV KYBER_GAME_PATH=/mnt/battlefront/starwarsbattlefrontii.exe
+ENV KYBER_MODULE_DIR=/root/.local/share/kyber/module
 
 # This must be set by the runner in the form of persona:password
 ENV MAXIMA_CREDENTIALS=
@@ -54,7 +58,11 @@ ENV MAXIMA_CREDENTIALS=
 # This must be set by the runner as a kyber account token, retrieved from `kyber_cli get_token`
 ENV KYBER_TOKEN=
 
-ENV KYBER_SERVER_NAME="[24/7] KYBER Server"
+ENV KYBER_SERVER_NAME=
+ENV KYBER_SERVER_MAP=
+ENV KYBER_SERVER_MODE=
+ENV KYBER_SERVER_PORT=
+ENV KYBER_SERVER_MAX_PLAYERS=
 
 WORKDIR /opt/kyber
 ENTRYPOINT ["/opt/kyber/entrypoint.sh"]

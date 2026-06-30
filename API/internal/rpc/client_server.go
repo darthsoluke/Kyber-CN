@@ -3,6 +3,7 @@ package rpc
 import (
 	"context"
 	"fmt"
+	"os"
 	"time"
 
 	"github.com/ArmchairDevelopers/Kyber/API/api/v1/pbapi"
@@ -34,7 +35,11 @@ func NewClientServer(store *db.Store, jwt *jwts.Service) *ClientServer {
 	config := &EventBlacklistConfig{}
 	err := util.LoadConfig("event-blacklist.yaml", config)
 	if err != nil {
-		panic(err)
+		if os.IsNotExist(err) {
+			logger.L().Warn("Event blacklist config missing; using an empty event blacklist", zap.Error(err))
+		} else {
+			panic(err)
+		}
 	}
 
 	return &ClientServer{

@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:cached_network_image/cached_network_image.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
@@ -78,6 +80,9 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
         context.read<ServerBrowserCubit>().state.selectedServer ??
         widget.server;
     final isLanServer = LanServerHelper.isLanServer(serverInfo);
+    final levelMapName = serverInfo.levelSetup.mapName.isNotEmpty
+        ? serverInfo.levelSetup.mapName
+        : map?.name ?? serverInfo.levelSetup.map;
     return FutureBuilder(
       future: sl.isReady<ModService>(),
       builder: (context, snapshot) {
@@ -147,19 +152,24 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                   iconData: mt.Icons.copy,
                                   size: 18,
                                   onPressed: () {
+                                    final service = sl.get<KyberGRPCService>();
+                                    final target =
+                                        'join_server?server_id='
+                                        '${serverInfo.id}';
                                     final text = isLanServer
                                         ? '${serverInfo.ip}:${serverInfo.port}'
                                         : Uri(
-                                            scheme: 'https',
-                                            host: 'api.prod.kyber.gg',
+                                            scheme: service.httpScheme,
+                                            host: service.httpHostname,
                                             path: 'redirect',
                                             queryParameters: {
-                                              'target':
-                                                  'join_server?server_id=${serverInfo.id}',
+                                              'target': target,
                                             },
                                           ).toString();
-                                    Clipboard.setData(
-                                      .new(text: text),
+                                    unawaited(
+                                      Clipboard.setData(
+                                        ClipboardData(text: text),
+                                      ),
                                     );
                                     NotificationService.info(
                                       message: context.l10n.text(
@@ -186,8 +196,10 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                 cursor: SystemMouseCursors.click,
                                 child: GestureDetector(
                                   onTap: () {
-                                    Clipboard.setData(
-                                      ClipboardData(text: serverInfo.id),
+                                    unawaited(
+                                      Clipboard.setData(
+                                        ClipboardData(text: serverInfo.id),
+                                      ),
                                     );
                                     NotificationService.showNotification(
                                       message: context.l10n.text(
@@ -203,7 +215,9 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                         child: Text(
                                           serverInfo.id,
                                           style: TextStyle(
-                                            color: kWhiteColor.withOpacity(.5),
+                                            color: kWhiteColor.withValues(
+                                              alpha: .5,
+                                            ),
                                             fontFamily:
                                                 FontFamily.battlefrontUI,
                                           ),
@@ -213,7 +227,9 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                       Icon(
                                         mt.Icons.copy_rounded,
                                         size: 15,
-                                        color: kWhiteColor.withOpacity(.5),
+                                        color: kWhiteColor.withValues(
+                                          alpha: .5,
+                                        ),
                                       ),
                                     ],
                                   ),
@@ -238,7 +254,7 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                   ),
                                 ),
                                 Text(
-                                  ' - ${serverInfo.levelSetup.mapName.isNotEmpty ? serverInfo.levelSetup.mapName : map?.name ?? serverInfo.levelSetup.map}',
+                                  ' - $levelMapName',
                                   style: const TextStyle(
                                     fontFamily: FontFamily.battlefrontUI,
                                     fontSize: 16,
@@ -508,7 +524,7 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                               ),
                             ),
                             child: RepaintBoundary(
-                              key: Key('server_list'),
+                              key: const Key('server_list'),
                               child: KyberList(
                                 colorOpacity: 0,
                                 shrinkWrap: true,
@@ -518,14 +534,31 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                       selectedServer.getPreferredServer().id,
                                     ) -
                                     1,
-                                roundedEnd: false,
-                                //itemPadding: const EdgeInsets.symmetric(vertical: 16, horizontal: 13),
                                 itemPadding: EdgeInsets.zero,
                                 physics: const ScrollPhysics(),
                                 itemBuilder: (context, index) {
                                   final item = selectedServer
                                       .getSorted()[index];
                                   final serverInfo = item;
+                                  final instanceModeName =
+                                      serverInfo.levelSetup.modeName.isNotEmpty
+                                      ? serverInfo.levelSetup.modeName
+                                      : MapHelper.getMode(
+                                              serverInfo.levelSetup.mode,
+                                            )?.name ??
+                                            context.l10n.text(
+                                              'join.unknownMode',
+                                            );
+                                  final instanceMapName =
+                                      serverInfo.levelSetup.mapName.isNotEmpty
+                                      ? serverInfo.levelSetup.mapName
+                                      : MapHelper.getMap(
+                                              serverInfo.levelSetup.mode,
+                                              serverInfo.levelSetup.map,
+                                            )?.name ??
+                                            context.l10n.text(
+                                              'join.unknownMap',
+                                            );
                                   return Row(
                                     children: [
                                       SizedBox(
@@ -537,14 +570,17 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                                 .mapImageHash
                                                 .isNotEmpty) {
                                               return CachedNetworkImage(
-                                                imageUrl:
-                                                    'https://${sl.get<KyberGRPCService>().httpHostname}/images/${serverInfo.mapImageHash}.jpeg',
+                                                imageUrl: sl
+                                                    .get<KyberGRPCService>()
+                                                    .imageUrl(
+                                                      serverInfo.mapImageHash,
+                                                    ),
                                                 fit: BoxFit.cover,
                                                 alignment: Alignment.centerLeft,
                                                 colorBlendMode:
                                                     BlendMode.darken,
-                                                color: Colors.black.withOpacity(
-                                                  .12,
+                                                color: Colors.black.withValues(
+                                                  alpha: .12,
                                                 ),
                                               );
                                             }
@@ -555,8 +591,8 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                               fit: BoxFit.cover,
                                               alignment: Alignment.centerLeft,
                                               colorBlendMode: BlendMode.darken,
-                                              color: Colors.black.withOpacity(
-                                                .12,
+                                              color: Colors.black.withValues(
+                                                alpha: .12,
                                               ),
                                             );
                                           },
@@ -605,23 +641,7 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                                       children: [
                                                         TextSpan(
                                                           text:
-                                                              serverInfo
-                                                                  .levelSetup
-                                                                  .modeName
-                                                                  .isNotEmpty
-                                                              ? serverInfo
-                                                                    .levelSetup
-                                                                    .modeName
-                                                              : MapHelper.getMode(
-                                                                          serverInfo
-                                                                              .levelSetup
-                                                                              .mode,
-                                                                        )
-                                                                        ?.name ??
-                                                                    context.l10n
-                                                                        .text(
-                                                                          'join.unknownMode',
-                                                                        ),
+                                                              instanceModeName,
                                                         ),
                                                         const TextSpan(
                                                           text: ' | ',
@@ -630,27 +650,7 @@ class _ServerInfoBoxState extends State<ServerInfoBox> {
                                                           ),
                                                         ),
                                                         TextSpan(
-                                                          text:
-                                                              serverInfo
-                                                                  .levelSetup
-                                                                  .mapName
-                                                                  .isNotEmpty
-                                                              ? serverInfo
-                                                                    .levelSetup
-                                                                    .mapName
-                                                              : MapHelper.getMap(
-                                                                          serverInfo
-                                                                              .levelSetup
-                                                                              .mode,
-                                                                          serverInfo
-                                                                              .levelSetup
-                                                                              .map,
-                                                                        )
-                                                                        ?.name ??
-                                                                    context.l10n
-                                                                        .text(
-                                                                          'join.unknownMap',
-                                                                        ),
+                                                          text: instanceMapName,
                                                         ),
                                                       ],
                                                     ),
@@ -746,47 +746,29 @@ class CustomPainterDownload extends CustomPainter {
 }
 
 Path _generateContainerPath(Size size) {
-  final path_0 = Path();
-  path_0.moveTo(5, 0);
-  path_0.lineTo((size.width * 0.50) - 5, 0);
-  path_0.quadraticBezierTo(size.width * 0.50, 0, (size.width * 0.50) + 5, 5);
-  path_0.quadraticBezierTo(
-    (size.width * 0.50) + 10,
-    10,
-    (size.width * 0.50) + 20,
-    10,
-  );
+  final centerX = size.width * 0.5;
+  final notchX = size.width * 0.87;
 
-  path_0.lineTo(size.width * 0.87 - 5, 10);
-
-  path_0.quadraticBezierTo(
-    size.width * 0.87,
-    10,
-    (size.width * 0.87) + 5,
-    5,
-  );
-  path_0.quadraticBezierTo(
-    (size.width * 0.87) + 10,
-    0,
-    (size.width * 0.87) + 20,
-    0,
-  );
-
-  path_0.lineTo(size.width - kDefaultOuterBorderRadius, 0);
-
-  path_0.quadraticBezierTo(
-    size.width,
-    0,
-    size.width,
-    kDefaultOuterBorderRadius,
-  );
-  path_0.lineTo(size.width, size.height);
-  path_0.lineTo(0, size.height);
-  path_0.lineTo(0, kDefaultOuterBorderRadius);
-  path_0.quadraticBezierTo(0, 0, kDefaultOuterBorderRadius, 0);
-  path_0.close();
-
-  return path_0;
+  return Path()
+    ..moveTo(5, 0)
+    ..lineTo(centerX - 5, 0)
+    ..quadraticBezierTo(centerX, 0, centerX + 5, 5)
+    ..quadraticBezierTo(centerX + 10, 10, centerX + 20, 10)
+    ..lineTo(notchX - 5, 10)
+    ..quadraticBezierTo(notchX, 10, notchX + 5, 5)
+    ..quadraticBezierTo(notchX + 10, 0, notchX + 20, 0)
+    ..lineTo(size.width - kDefaultOuterBorderRadius, 0)
+    ..quadraticBezierTo(
+      size.width,
+      0,
+      size.width,
+      kDefaultOuterBorderRadius,
+    )
+    ..lineTo(size.width, size.height)
+    ..lineTo(0, size.height)
+    ..lineTo(0, kDefaultOuterBorderRadius)
+    ..quadraticBezierTo(0, 0, kDefaultOuterBorderRadius, 0)
+    ..close();
 }
 
 class _KyberContainerCustomPainter extends CustomPainter {
@@ -813,7 +795,7 @@ class _KyberContainerClipper extends CustomClipper<Path> {
   }
 
   @override
-  bool shouldReclip(covariant CustomClipper oldClipper) {
+  bool shouldReclip(covariant CustomClipper<Path> oldClipper) {
     return true;
   }
 }
@@ -856,7 +838,7 @@ class _DownloadItemState extends State<_DownloadItem> {
           decoration: BoxDecoration(
             border: Border(
               top: BorderSide(
-                color: decoColor.withOpacity(0.5),
+                color: decoColor.withValues(alpha: 0.5),
               ),
             ),
           ),

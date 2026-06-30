@@ -11,6 +11,7 @@ import 'package:kyber_launcher/features/mod_collections/providers/mod_collection
 import 'package:kyber_launcher/features/mods/widgets/collection_list/collection_icon.dart';
 import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
+import 'package:kyber_launcher/features/server_browser/services/join_server_preflight_service.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:kyber_launcher/injection_container.dart';
@@ -25,7 +26,11 @@ import 'package:kyber_launcher/shared/ui/utils/button_builder.dart';
 import 'package:logging/logging.dart';
 
 class CosmeticModsDialog extends StatefulWidget {
-  const CosmeticModsDialog({required this.server, this.skipPasswordCheck = false, super.key});
+  const CosmeticModsDialog({
+    required this.server,
+    this.skipPasswordCheck = false,
+    super.key,
+  });
 
   final Object server;
   final bool skipPasswordCheck;
@@ -35,6 +40,9 @@ class CosmeticModsDialog extends StatefulWidget {
 }
 
 class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
+  static final _logger = Logger('join_server_dialog');
+  final _preflight = JoinServerPreflightService();
+
   late bool correctPassword;
 
   String password = '';
@@ -49,29 +57,46 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
 
   @override
   void initState() {
-    serverInfo = widget.server is ServerGroup ? (widget.server as ServerGroup).getPreferredServer() : widget.server as Server;
+    serverInfo = widget.server is ServerGroup
+        ? (widget.server as ServerGroup).getPreferredServer()
+        : widget.server as Server;
     correctPassword = widget.skipPasswordCheck || !serverInfo.requiresPassword;
     withoutMods = !Preferences.general.useCosmetics;
-    final mods = serverInfo.mods.map((e) => CollectionMod(name: e.name, version: e.version, link: e.link)).toList();
+    _logger.info(
+      'LAN_STAGE[join_dialog.init] '
+      'id=${serverInfo.id} isLan=${LanServerHelper.isLanServer(serverInfo)} '
+      'apiBackedJoin=${LanServerHelper.hasApiBackedJoin(serverInfo)} '
+      'requiresPassword=${serverInfo.requiresPassword} '
+      'skipPasswordCheck=${widget.skipPasswordCheck}',
+    );
+    final mods = serverInfo.mods
+        .map(
+          (e) => CollectionMod(name: e.name, version: e.version, link: e.link),
+        )
+        .toList();
     for (final collection in collectionBox.values) {
       final gameplayMods = collection
           .getLocalMods(
-        onlyGameplay: true,
-        expandCollections: true,
-        expandGameplayCollections: false,
-      )
+            onlyGameplay: true,
+            expandCollections: true,
+            expandGameplayCollections: false,
+          )
           .whereType<FrostyMod>()
           .map((e) => e.toCollectionMod())
           .toList();
 
-      if (const ListEquality<CollectionMod>().equals(gameplayMods, mods) || collection.isCosmetic || gameplayMods.isEmpty) {
+      if (const ListEquality<CollectionMod>().equals(gameplayMods, mods) ||
+          collection.isCosmetic ||
+          gameplayMods.isEmpty) {
         collections.add(collection);
       }
     }
 
     if (Preferences.general.selectedCosmeticCollection != null) {
-      final selectedCollectionId = Preferences.general.selectedCosmeticCollection;
-      if (collectionBox.containsKey(selectedCollectionId) && collections.any((x) => x.localId == selectedCollectionId)) {
+      final selectedCollectionId =
+          Preferences.general.selectedCosmeticCollection;
+      if (collectionBox.containsKey(selectedCollectionId) &&
+          collections.any((x) => x.localId == selectedCollectionId)) {
         selectedCollection = collectionBox.get(selectedCollectionId);
       }
     }
@@ -87,40 +112,38 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
   }
 
   Future<void> checkPassword() async {
-    if (LanServerHelper.isLanServer(serverInfo) &&
-        !LanServerHelper.hasApiBackedJoin(serverInfo)) {
-      if (serverInfo.requiresPassword && password.isEmpty) {
-        NotificationService.showNotification(
-          message: context.l10n.text('join.enterPasswordContinue'),
-          severity: InfoBarSeverity.error,
-        );
+    try {
+      final result = await _preflight.checkPassword(
+        server: serverInfo,
+        password: password,
+      );
+      if (!mounted) {
         return;
       }
 
-      setState(() {
-        correctPassword = true;
-      });
-      return;
-    }
-
-    try {
-      final service = sl.get<KyberGRPCService>();
-      final result = await service.serverBrowserClient.canJoinServer(CanJoinServerRequest(
-        id: serverInfo.id,
-        password: password,
-      ));
-
-      if (result.canJoin) {
-        return setState(() {
+      if (result.allowed) {
+        setState(() {
           correctPassword = true;
         });
+        return;
       }
 
       NotificationService.showNotification(
-        message: context.l10n.text('join.invalidPassword'),
+        message:
+            result.message ??
+            context.l10n.text(result.messageKey ?? 'join.genericError'),
         severity: InfoBarSeverity.error,
       );
-    } catch (e, s) {
+    } on Object catch (e, s) {
+      _logger.severe(
+        'LAN_STAGE[join_dialog.password_check.api.error] '
+        'id=${serverInfo.id} error=$e',
+        e,
+        s,
+      );
+      if (!mounted) {
+        return;
+      }
       if (e is GrpcError && e.code == StatusCode.notFound) {
         Navigator.pop(context);
         NotificationService.showNotification(
@@ -154,7 +177,7 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                 children: [
                   Text(
                     context.l10n.text('join.requiresPassword'),
-                    style: TextStyle(
+                    style: const TextStyle(
                       color: kWhiteColor,
                     ),
                   ),
@@ -192,7 +215,10 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                       ),
                       children: [
                         TextSpan(
-                          text: '#${(widget.server as ServerGroup).getInstanceId(serverInfo.id)}',
+                          text:
+                              '#${(widget.server as ServerGroup).getInstanceId(
+                                serverInfo.id,
+                              )}',
                           style: TextStyle(
                             color: kActiveColor,
                           ),
@@ -204,7 +230,8 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                           ),
                         ),
                         TextSpan(
-                          text: '(${serverInfo.playerCount}/${serverInfo.maxPlayerCount})',
+                          text:
+                              '(${serverInfo.playerCount}/${serverInfo.maxPlayerCount})',
                         ),
                       ],
                     ),
@@ -213,7 +240,8 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                     Padding(
                       padding: const EdgeInsets.only(top: 10),
                       child: ButtonBuilder(
-                        onClick: () => setState(() => showInstanceSelector = true),
+                        onClick: () =>
+                            setState(() => showInstanceSelector = true),
                         builder: (context, hovered) {
                           return Text(
                             context.l10n.text('join.changeInstance'),
@@ -233,33 +261,58 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                         onChanged: (value) {
                           setState(() => serverInfo = value);
                         },
-                        itemBuilder: (DropdownItem<dynamic> item) {
-                          item as DropdownItem<Server>;
-                          final instanceId = (widget.server as ServerGroup).getInstanceId(item.value.id);
+                        itemBuilder: (item) {
+                          final instanceId = (widget.server as ServerGroup)
+                              .getInstanceId(item.value.id);
                           final serverInfo = item.value;
+                          final modeName =
+                              serverInfo.levelSetup.modeName.isNotEmpty
+                              ? serverInfo.levelSetup.modeName
+                              : MapHelper.getMode(
+                                      serverInfo.levelSetup.mode,
+                                    )?.name ??
+                                    context.l10n.text('join.unknownMode');
+                          final mapName =
+                              serverInfo.levelSetup.mapName.isNotEmpty
+                              ? serverInfo.levelSetup.mapName
+                              : MapHelper.getMap(
+                                      serverInfo.levelSetup.mode,
+                                      serverInfo.levelSetup.map,
+                                    )?.name ??
+                                    context.l10n.text('join.unknownMap');
                           return Row(
                             children: [
                               SizedBox(
                                 width: 70,
                                 height: 45,
-                                child: Builder(builder: (context) {
-                                  if (serverInfo.mapImageHash.isNotEmpty) {
-                                    return CachedNetworkImage(
-                                      imageUrl: 'https://${sl.get<KyberGRPCService>().httpHostname}/images/${serverInfo.mapImageHash}.jpeg',
+                                child: Builder(
+                                  builder: (context) {
+                                    if (serverInfo.mapImageHash.isNotEmpty) {
+                                      return CachedNetworkImage(
+                                        imageUrl: sl
+                                            .get<KyberGRPCService>()
+                                            .imageUrl(serverInfo.mapImageHash),
+                                        fit: BoxFit.cover,
+                                        alignment: Alignment.centerLeft,
+                                        colorBlendMode: BlendMode.darken,
+                                        color: Colors.black.withValues(
+                                          alpha: .12,
+                                        ),
+                                      );
+                                    }
+
+                                    return MapHelper.getImageForMap(
+                                      serverInfo.levelSetup.map,
+                                    )!.image(
                                       fit: BoxFit.cover,
                                       alignment: Alignment.centerLeft,
                                       colorBlendMode: BlendMode.darken,
-                                      color: Colors.black.withOpacity(.12),
+                                      color: Colors.black.withValues(
+                                        alpha: .12,
+                                      ),
                                     );
-                                  }
-
-                                  return MapHelper.getImageForMap(serverInfo.levelSetup.map)!.image(
-                                    fit: BoxFit.cover,
-                                    alignment: Alignment.centerLeft,
-                                    colorBlendMode: BlendMode.darken,
-                                    color: Colors.black.withOpacity(.12),
-                                  );
-                                }),
+                                  },
+                                ),
                               ),
                               Container(width: 2, height: 45, color: decoColor),
                               Expanded(
@@ -267,7 +320,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                   crossAxisAlignment: CrossAxisAlignment.start,
                                   children: [
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10).copyWith(top: 5),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ).copyWith(top: 5),
                                       child: Text(
                                         context.l10n.text(
                                           'join.instance',
@@ -281,7 +336,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                       ),
                                     ),
                                     Padding(
-                                      padding: const EdgeInsets.symmetric(horizontal: 10),
+                                      padding: const EdgeInsets.symmetric(
+                                        horizontal: 10,
+                                      ),
                                       child: Row(
                                         children: [
                                           RichText(
@@ -289,14 +346,12 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                               style: const TextStyle(
                                                 fontSize: 16,
                                                 color: kWhiteColor1,
-                                                fontFamily: FontFamily.battlefrontUI,
+                                                fontFamily:
+                                                    FontFamily.battlefrontUI,
                                               ),
                                               children: [
                                                 TextSpan(
-                                                  text: serverInfo.levelSetup.modeName.isNotEmpty
-                                                      ? serverInfo.levelSetup.modeName
-                                                      : MapHelper.getMode(serverInfo.levelSetup.mode)?.name ??
-                                                          context.l10n.text('join.unknownMode'),
+                                                  text: modeName,
                                                 ),
                                                 const TextSpan(
                                                   text: ' | ',
@@ -305,14 +360,11 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                                   ),
                                                 ),
                                                 TextSpan(
-                                                  text: serverInfo.levelSetup.mapName.isNotEmpty
-                                                      ? serverInfo.levelSetup.mapName
-                                                      : MapHelper.getMap(serverInfo.levelSetup.mode, serverInfo.levelSetup.map)?.name ??
-                                                          context.l10n.text('join.unknownMap'),
+                                                  text: mapName,
                                                 ),
                                               ],
                                             ),
-                                          )
+                                          ),
                                         ],
                                       ),
                                     ),
@@ -320,7 +372,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                                 ),
                               ),
                               Padding(
-                                padding: const EdgeInsets.symmetric(horizontal: 10),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 10,
+                                ),
                                 child: Text(
                                   '${item.value.playerCount}/${item.value.maxPlayerCount}',
                                   style: const TextStyle(
@@ -332,7 +386,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                             ],
                           );
                         },
-                        items: (widget.server as ServerGroup).getSorted().map((e) {
+                        items: (widget.server as ServerGroup).getSorted().map((
+                          e,
+                        ) {
                           return DropdownItem(
                             value: e,
                             label: context.l10n.text(
@@ -353,7 +409,7 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                 Text(context.l10n.text('join.cosmeticsTitle')),
                 Text(
                   context.l10n.text('join.cosmeticsDescription'),
-                  style: TextStyle(
+                  style: const TextStyle(
                     color: kWhiteColor,
                   ),
                 ),
@@ -383,17 +439,23 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                   KyberDropdown<ModCollectionMetaData>(
                     onChanged: (value) {
                       setState(() => selectedCollection = value);
-                      Preferences.general.selectedCosmeticCollection = value.localId;
+                      Preferences.general.selectedCosmeticCollection =
+                          value.localId;
                     },
-                    itemBuilder: (DropdownItem<dynamic> item) {
-                      item as DropdownItem<ModCollectionMetaData>;
+                    itemBuilder: (item) {
                       return Row(
                         children: [
-                          SizedBox(height: 40, width: 40, child: CollectionIcon(collection: item.value)),
+                          SizedBox(
+                            height: 40,
+                            width: 40,
+                            child: CollectionIcon(collection: item.value),
+                          ),
                           Container(width: 2, height: 40, color: decoColor),
                           Expanded(
                             child: Padding(
-                              padding: const EdgeInsets.symmetric(horizontal: 10),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                              ),
                               child: Text(
                                 item.value.title,
                                 style: const TextStyle(
@@ -406,7 +468,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
                         ],
                       );
                     },
-                    items: collections.map((e) => DropdownItem(value: e, label: e.title)).toList(),
+                    items: collections
+                        .map((e) => DropdownItem(value: e, label: e.title))
+                        .toList(),
                     selectedItem: selectedCollection,
                     placeholder: context.l10n.text('join.selectCollection'),
                   ),
@@ -429,7 +493,9 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
         if (correctPassword)
           NormalButton(
             onPressed: () => setState(() => spectator = !spectator),
-            iconData: spectator ? mt.Icons.check_circle : mt.Icons.circle_outlined,
+            iconData: spectator
+                ? mt.Icons.check_circle
+                : mt.Icons.circle_outlined,
             label: Row(
               children: [
                 const Icon(mt.Icons.remove_red_eye_outlined),
@@ -443,64 +509,75 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
             text: context.l10n.text('common.joinServer'),
             icon: Assets.icons.kyberLogo.svg(height: 20),
             onPressed: () async {
-              if (LanServerHelper.isLanServer(serverInfo) &&
-                  !LanServerHelper.isJoinable(serverInfo)) {
-                NotificationService.showNotification(
-                  message: context.l10n.text('join.lanNotRegistered'),
-                  severity: InfoBarSeverity.error,
+              try {
+                final preflight = await _preflight.validateSubmit(
+                  server: serverInfo,
+                  password: password,
                 );
+                if (!context.mounted) {
+                  return;
+                }
+                if (!preflight.allowed) {
+                  NotificationService.showNotification(
+                    message:
+                        preflight.message ??
+                        context.l10n.text(
+                          preflight.messageKey ?? 'join.genericError',
+                        ),
+                    severity: InfoBarSeverity.error,
+                  );
+                  return;
+                }
+              } on Object catch (e, s) {
+                _logger.severe(
+                  'LAN_STAGE[join_dialog.submit.api.error] '
+                  'id=${serverInfo.id} error=$e',
+                  e,
+                  s,
+                );
+                if (!context.mounted) {
+                  return;
+                }
+                if (e is GrpcError && e.code == StatusCode.permissionDenied) {
+                  Logger.root.severe('An error occurred', e, s);
+                  Navigator.pop(context);
+                  NotificationService.showNotification(
+                    message:
+                        e.message ?? context.l10n.text('join.bannedFromServer'),
+                    severity: InfoBarSeverity.error,
+                  );
+                } else {
+                  Logger.root.severe('An error occurred', e, s);
+                  NotificationService.showNotification(
+                    message: e is GrpcError
+                        ? e.message ?? e.code.toString()
+                        : context.l10n.text('join.genericError'),
+                    severity: InfoBarSeverity.error,
+                  );
+                }
                 return;
               }
 
-              final useApiValidation =
-                  !LanServerHelper.isLanServer(serverInfo) ||
-                      LanServerHelper.hasApiBackedJoin(serverInfo);
-
-              if (useApiValidation && !serverInfo.requiresPassword) {
-                try {
-                  final result = await sl.get<KyberGRPCService>().serverBrowserClient.canJoinServer(
-                    CanJoinServerRequest(
-                      id: serverInfo.id,
-                      password: password,
-                    ),
-                  );
-
-                  if (!result.canJoin) {
-                    NotificationService.showNotification(
-                      message: result.reason,
-                      severity: InfoBarSeverity.error,
-                    );
-                    return;
-                  }
-                } catch (e, s) {
-                  if (e is GrpcError && e.code == StatusCode.permissionDenied) {
-                    Logger.root.severe('An error occurred', e, s);
-                    Navigator.pop(context);
-                    NotificationService.showNotification(
-                      message:
-                          e.message ?? context.l10n.text('join.bannedFromServer'),
-                      severity: InfoBarSeverity.error,
-                    );
-                  } else {
-                    Logger.root.severe('An error occurred', e, s);
-                    NotificationService.showNotification(
-                      message: e is GrpcError
-                          ? e.message ?? e.code.toString()
-                          : context.l10n.text('join.genericError'),
-                      severity: InfoBarSeverity.error,
-                    );
-                  }
-                  return;
-                }
-              }
-
               final result = JoinDialogResult(
-                collection: withoutMods ? ModCollectionMetaData.noMods() : selectedCollection ?? ModCollectionMetaData.noMods(),
+                collection: withoutMods
+                    ? ModCollectionMetaData.noMods()
+                    : selectedCollection ?? ModCollectionMetaData.noMods(),
                 spectator: spectator,
                 password: password,
-                instanceId: widget.server is ServerGroup ? serverInfo.meta['instance_id'] : null,
+                instanceId: widget.server is ServerGroup
+                    ? serverInfo.meta['instance_id']
+                    : null,
+              );
+              _logger.info(
+                'LAN_STAGE[join_dialog.submit.accepted] '
+                'id=${serverInfo.id} spectator=$spectator '
+                'withoutMods=$withoutMods '
+                'instanceId=${result.instanceId ?? ''}',
               );
 
+              if (!context.mounted) {
+                return;
+              }
               Navigator.of(context).pop(result);
             },
           ),
@@ -510,7 +587,12 @@ class _CosmeticModsDialogState extends State<CosmeticModsDialog> {
 }
 
 class JoinDialogResult {
-  JoinDialogResult({required this.collection, required this.spectator, this.password = '', this.instanceId});
+  JoinDialogResult({
+    required this.collection,
+    required this.spectator,
+    this.password = '',
+    this.instanceId,
+  });
 
   final ModCollectionMetaData collection;
   final bool spectator;

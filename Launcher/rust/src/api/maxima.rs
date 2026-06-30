@@ -1,26 +1,34 @@
-use std::io::Sink;
+use std::{env, io::Sink, path::PathBuf, time::Instant};
 
 use flutter_rust_bridge::for_generated::anyhow::bail;
 use lazy_static::lazy_static;
 use log::{debug, error, info, set_max_level, warn, LevelFilter};
 use maxima::core::auth::context::AuthContext;
-use maxima::core::auth::login::{begin_oauth_login_flow, manual_login};
+use maxima::core::auth::login::begin_oauth_login_flow;
 use maxima::core::auth::{nucleus_auth_exchange, nucleus_token_exchange, TokenResponse};
 use maxima::core::clients::JUNO_PC_CLIENT_ID;
 use maxima::core::launch::{LaunchMode, LaunchOptions};
-use maxima::core::service_layer::{ServiceGetBasicPlayerRequest, ServiceGetBasicPlayerRequestBuilder, ServiceGetUserPlayerRequestBuilder, ServiceLayerError, ServicePlayer as MaximaServicePlayer, ServicePlayersPage, ServiceSearchPlayerRequest, ServiceSearchPlayerRequestBuilder, ServiceUserGameProduct, SERVICE_REQUEST_GETBASICPLAYER, SERVICE_REQUEST_GETUSERPLAYER, SERVICE_REQUEST_SEARCHPLAYER};
-use maxima::core::{launch, LockedMaxima, Maxima, MaximaEvent};
+use maxima::core::service_layer::{
+    ServiceGetBasicPlayerRequest, ServiceGetBasicPlayerRequestBuilder,
+    ServiceGetUserPlayerRequestBuilder, ServiceLayerError, ServicePlayer as MaximaServicePlayer,
+    ServicePlayersPage, ServiceSearchPlayerRequest, ServiceSearchPlayerRequestBuilder,
+    ServiceUserGameProduct, SERVICE_REQUEST_GETBASICPLAYER, SERVICE_REQUEST_GETUSERPLAYER,
+    SERVICE_REQUEST_SEARCHPLAYER,
+};
+use maxima::core::{launch, LockedMaxima, Maxima, MaximaEvent, MaximaOptionsBuilder};
 pub use maxima::rtm::client::BasicPresence;
 use maxima::util::native::maxima_dir;
 use maxima::util::registry::read_game_path;
+use maxima::{
+    core::service_layer::{
+        ServiceFriends, ServiceGetMyFriendsRequestBuilder, SERVICE_REQUEST_GETMYFRIENDS,
+    },
+    util::{log::init_logger, registry::check_registry_validity},
+};
 #[cfg(windows)]
 use maxima::{
-    core::background_service::request_registry_setup,
+    core::{background_service::request_registry_setup, error::BackgroundServiceClientError},
     util::service::{is_service_running, is_service_valid, register_service_user, start_service},
-};
-use maxima::{
-    core::service_layer::{ServiceFriends, ServiceGetMyFriendsRequestBuilder, SERVICE_REQUEST_GETMYFRIENDS},
-    util::{log::init_logger, registry::check_registry_validity},
 };
 use regex::Regex;
 use tokio::net::TcpListener;
@@ -55,10 +63,19 @@ lazy_static! {
 }
 static mut _maxima: Option<LockedMaxima> = None;
 static mut _rpc_connected: bool = false;
+const MAXIMA_SERVICE_SETUP_TIMEOUT_SECONDS: u64 = 30;
 
-async fn create_maxima_instance() {
+async fn create_maxima_instance(is_dummy: bool) {
     unsafe {
-        _maxima = Some(Maxima::new().await.unwrap());
+        _maxima = Maxima::new_with_options(
+            MaximaOptionsBuilder::default()
+                .load_auth_storage(!is_dummy)
+                .dummy_local_user(is_dummy)
+                .build()
+                .unwrap(),
+        )
+        .await
+        .ok();
     }
 }
 
@@ -141,7 +158,10 @@ pub struct RtmPresence {
 
 pub async fn set_rtm_presence(status: String) -> anyhow::Result<()> {
     let mut maxima = maxima().lock().await;
-    maxima.rtm().set_presence(BasicPresence::Online, &status, "Origin.OFR.50.0002148").await?;
+    maxima
+        .rtm()
+        .set_presence(BasicPresence::Online, &status, "Origin.OFR.50.0002148")
+        .await?;
     drop(maxima);
     Ok(())
 }
@@ -160,10 +180,7 @@ pub async fn start_rtm_connection() -> anyhow::Result<()> {
     rtm.set_presence(BasicPresence::Online, "KYBER", "Origin.OFR.50.0002148")
         .await?;
 
-    let players: Vec<String> = friends
-        .iter()
-        .map(|f| f.id().to_owned())
-        .collect();
+    let players: Vec<String> = friends.iter().map(|f| f.id().to_owned()).collect();
 
     rtm.subscribe(&players).await?;
     drop(maxima_l);
@@ -217,7 +234,11 @@ pub async fn get_rtm_presences(presence_sink: StreamSink<RtmPresence>) -> anyhow
     return Ok(());
 }
 
-pub async fn lsx_get_event_stream(pid: u32, is_startup: Option<bool>, game_sink: StreamSink<String>) {
+pub async fn lsx_get_event_stream(
+    pid: u32,
+    is_startup: Option<bool>,
+    game_sink: StreamSink<String>,
+) {
     let maxima_arc = maxima().clone();
     let timeout = if is_startup.is_none() {
         std::time::Duration::from_millis(25)
@@ -301,11 +322,10 @@ pub async fn search_user(name: String) -> anyhow::Result<ServicePlayer> {
     }
 
     let response = response?;
-    
     if response.items().is_empty() {
         bail!("User not found");
     }
-    
+
     let player = response.items().first().unwrap();
     Ok(convert_service_player(player))
 }
@@ -313,7 +333,10 @@ pub async fn search_user(name: String) -> anyhow::Result<ServicePlayer> {
 pub async fn check_game_installation() -> anyhow::Result<()> {
     let maxima_arc = maxima().clone();
     let mut maxima = maxima_arc.lock().await;
-    let game = maxima.mut_library().game_by_base_slug("star-wars-battlefront-2").await;
+    let game = maxima
+        .mut_library()
+        .game_by_base_slug("star-wars-battlefront-2")
+        .await;
     if game.is_err() {
         bail!(game.err().unwrap())
     }
@@ -335,10 +358,23 @@ pub async fn start_game(
     game_slug: String,
     game_path_override: Option<String>,
     game_args: Option<Vec<String>>,
+    user: Option<String>,
+    pass: Option<String>,
 ) -> anyhow::Result<u32> {
     let maxima_arc = maxima().clone();
 
-    let offer_id = {
+    let dummy_user = maxima().lock().await.dummy_local_user();
+    let launch_mode = if dummy_user {
+        let offline_user = user.unwrap_or_default();
+        let offline_pass = pass.unwrap_or_default();
+        if offline_user.is_empty() || offline_pass.is_empty() {
+            info!(
+                "Starting BFII host through dummy Maxima user without explicit credentials; existing license/auth state is required."
+            );
+        }
+
+        LaunchMode::OnlineOffline(1035052.to_string(), offline_user, offline_pass)
+    } else {
         let mut maxima = maxima_arc.lock().await;
         let game = maxima.mut_library().game_by_base_slug(&game_slug).await;
         if game.is_err() {
@@ -355,15 +391,24 @@ pub async fn start_game(
             bail!("Game not installed");
         }
 
-        game.offer_id().to_owned()
+        LaunchMode::Online(game.offer_id().to_owned())
     };
 
     // TODO: re-enable cloud-saves (@headassbtw please fix)
-    launch::start_game(maxima_arc.clone(), LaunchMode::Online(offer_id), LaunchOptions {
-        path_override: game_path_override,
-        arguments: game_args.unwrap_or_default(),
-        cloud_saves: false,
-    }).await?;
+    launch::start_game(
+        maxima_arc.clone(),
+        launch_mode,
+        LaunchOptions {
+            path_override: game_path_override,
+            arguments: game_args.unwrap_or_default(),
+            cloud_saves: false,
+        },
+    )
+    .await?;
+
+    if dedicated_server_mode() {
+        return wait_for_dedicated_host_pid(maxima_arc.clone()).await;
+    }
 
     loop {
         let mut maxima = maxima_arc.lock().await;
@@ -388,6 +433,128 @@ pub async fn start_game(
     }
 }
 
+fn dedicated_server_mode() -> bool {
+    env::var("KYBER_DEDICATED_SERVER")
+        .map(|value| matches!(value.as_str(), "1" | "true" | "TRUE" | "yes" | "YES"))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+async fn wait_for_dedicated_host_pid(maxima_arc: LockedMaxima) -> anyhow::Result<u32> {
+    let (launch_id, process_name) = {
+        let maxima = maxima_arc.lock().await;
+        let context = maxima
+            .playing()
+            .as_ref()
+            .ok_or_else(|| anyhow::anyhow!("dedicated host launch context is missing"))?;
+        let process_name = env::var("MAXIMA_WINE_INJECTOR_PROCESS_NAME").unwrap_or_else(|_| {
+            PathBuf::from(context.game_path())
+                .file_name()
+                .and_then(|file| file.to_str())
+                .unwrap_or("starwarsbattlefrontii.exe")
+                .to_owned()
+        });
+
+        (context.launch_id().to_owned(), process_name)
+    };
+
+    let deadline = Instant::now() + std::time::Duration::from_secs(60);
+    while Instant::now() < deadline {
+        if let Some(pid) = find_linux_process_by_name_and_launch_id(&process_name, &launch_id) {
+            info!(
+                "Dedicated BFII host process resolved through /proc: {} (PID {})",
+                process_name, pid
+            );
+            return Ok(pid);
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    bail!(
+        "Dedicated BFII host process `{}` did not appear in /proc within 60 seconds",
+        process_name
+    );
+}
+
+#[cfg(target_os = "linux")]
+fn find_linux_process_by_name_and_launch_id(process_name: &str, launch_id: &str) -> Option<u32> {
+    let entries = std::fs::read_dir("/proc").ok()?;
+    let expected = process_name.to_ascii_lowercase();
+    let launch_marker = format!("MXLaunchId={}", launch_id);
+
+    for entry in entries.flatten() {
+        let pid_name = entry.file_name();
+        let Ok(pid) = pid_name.to_string_lossy().parse::<u32>() else {
+            continue;
+        };
+
+        let proc_dir = entry.path();
+        let Ok(cmdline) = std::fs::read(proc_dir.join("cmdline")) else {
+            continue;
+        };
+        if !process_cmdline_contains_name(&cmdline, &expected) {
+            continue;
+        }
+
+        let Ok(environ) = std::fs::read(proc_dir.join("environ")) else {
+            continue;
+        };
+        if process_environ_contains(&environ, &launch_marker) {
+            return Some(pid);
+        }
+    }
+
+    None
+}
+
+#[cfg(target_os = "linux")]
+fn process_cmdline_contains_name(cmdline: &[u8], expected: &str) -> bool {
+    cmdline
+        .split(|byte| *byte == 0)
+        .filter_map(|part| std::str::from_utf8(part).ok())
+        .find(|part| !part.is_empty())
+        .map(|part| part.replace('\\', "/").to_ascii_lowercase())
+        .map(|part| part.ends_with(expected))
+        .unwrap_or(false)
+}
+
+#[cfg(target_os = "linux")]
+fn process_environ_contains(environ: &[u8], expected: &str) -> bool {
+    environ
+        .split(|byte| *byte == 0)
+        .filter_map(|part| std::str::from_utf8(part).ok())
+        .any(|part| part == expected)
+}
+
+#[cfg(not(target_os = "linux"))]
+async fn wait_for_dedicated_host_pid(maxima_arc: LockedMaxima) -> anyhow::Result<u32> {
+    let deadline = Instant::now() + std::time::Duration::from_secs(60);
+    while Instant::now() < deadline {
+        let pid = {
+            let maxima = maxima_arc.lock().await;
+            let context = maxima
+                .playing()
+                .as_ref()
+                .ok_or_else(|| anyhow::anyhow!("dedicated host launch context is missing"))?;
+
+            maxima::lsx::connection::get_os_pid(context).unwrap_or(0)
+        };
+
+        if pid != 0 {
+            info!(
+                "Dedicated BFII host process resolved through Maxima: PID {}",
+                pid
+            );
+            return Ok(pid);
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    bail!("Dedicated BFII host process did not appear within 60 seconds")
+}
+
 fn is_maxima_running() -> bool {
     unsafe { _maxima.is_some() }
 }
@@ -396,7 +563,10 @@ pub async fn check_game_ownership() -> anyhow::Result<bool> {
     let maxima_arc = maxima().clone();
     let mut maxima = maxima_arc.lock().await;
 
-    let game = maxima.mut_library().game_by_base_slug("star-wars-battlefront-2").await;
+    let game = maxima
+        .mut_library()
+        .game_by_base_slug("star-wars-battlefront-2")
+        .await;
     if game.is_err() {
         bail!(game.err().unwrap())
     }
@@ -414,16 +584,10 @@ async fn login(login_override: Option<String>) -> anyhow::Result<TokenResponse> 
     let mut auth_context = AuthContext::new()?;
 
     if let Some(access_token) = &login_override {
-        let access_token = if let Some(captures) = MANUAL_LOGIN_PATTERN.captures(&access_token) {
-            let persona = &captures[1];
-            let password = &captures[2];
-
-            let login_result = manual_login(persona, password).await;
-            if login_result.is_err() {
-                bail!("Login failed: {}", login_result.err().unwrap().to_string());
-            }
-
-            login_result.unwrap()
+        let access_token = if MANUAL_LOGIN_PATTERN.is_match(&access_token) {
+            bail!(
+                "manual EA/Maxima password login is not supported by this build; use the normal EA OAuth/Maxima session instead"
+            )
         } else {
             access_token.to_owned()
         };
@@ -483,7 +647,9 @@ pub async fn is_logged_in() -> bool {
 
 /// Starts the login flow. When not logged in, will start EA OAuth2 login flow. When logged in, will return the current player as [ServicePlayer].
 ///
-/// [login_override] - When set, will override the login flow and use the provided credentials instead. Format: persona:password
+/// [login_override] - When set, overrides the login flow with an access token.
+/// Direct persona:password login is intentionally disabled because this Maxima
+/// build does not implement manual EA password login.
 pub async fn login_flow(login_override: Option<String>) -> anyhow::Result<ServicePlayer> {
     let y = maxima().lock().await;
     {
@@ -503,10 +669,57 @@ pub async fn login_flow(login_override: Option<String>) -> anyhow::Result<Servic
 }
 
 #[cfg(windows)]
+async fn install_service_with_timeout() -> anyhow::Result<()> {
+    info!("Installing service...");
+    let timeout_duration = std::time::Duration::from_secs(MAXIMA_SERVICE_SETUP_TIMEOUT_SECONDS);
+    match tokio::time::timeout(timeout_duration, tokio::task::spawn_blocking(register_service_user))
+        .await
+    {
+        Ok(join_result) => {
+            join_result??;
+        }
+        Err(_) => bail!(
+            "Maxima service installation timed out after {} seconds. Accept the Windows UAC prompt or run Kyber Launcher as Administrator to repair the Maxima service.",
+            MAXIMA_SERVICE_SETUP_TIMEOUT_SECONDS
+        ),
+    }
+
+    let deadline = Instant::now() + timeout_duration;
+    while Instant::now() < deadline {
+        if is_service_valid()? {
+            return Ok(());
+        }
+
+        tokio::time::sleep(std::time::Duration::from_millis(500)).await;
+    }
+
+    bail!(
+        "Maxima service installation did not produce a valid service within {} seconds. Accept the Windows UAC prompt or run Kyber Launcher as Administrator to repair the Maxima service.",
+        MAXIMA_SERVICE_SETUP_TIMEOUT_SECONDS
+    )
+}
+
+#[cfg(windows)]
+async fn start_service_with_timeout() -> anyhow::Result<()> {
+    info!("Starting service...");
+    match tokio::time::timeout(
+        std::time::Duration::from_secs(MAXIMA_SERVICE_SETUP_TIMEOUT_SECONDS),
+        start_service(),
+    )
+    .await
+    {
+        Ok(result) => Ok(result?),
+        Err(_) => bail!(
+            "Maxima service startup timed out after {} seconds.",
+            MAXIMA_SERVICE_SETUP_TIMEOUT_SECONDS
+        ),
+    }
+}
+
+#[cfg(windows)]
 pub async fn check_service() -> anyhow::Result<()> {
     if !is_service_running()? {
-        info!("Starting service...");
-        start_service().await?;
+        start_service_with_timeout().await?;
     }
 
     Ok(())
@@ -520,19 +733,23 @@ pub async fn check_service() -> anyhow::Result<()> {
 #[cfg(windows)]
 async fn native_setup() -> anyhow::Result<()> {
     if !is_service_valid()? {
-        info!("Installing service...");
-        register_service_user()?;
-        tokio::time::sleep(std::time::Duration::from_secs(1)).await;
+        install_service_with_timeout().await?;
     }
 
     if !is_service_running()? {
-        info!("Starting service...");
-        start_service().await?;
+        start_service_with_timeout().await?;
     }
 
     if let Err(err) = check_registry_validity() {
         warn!("{}, fixing...", err);
-        request_registry_setup().await?;
+        if let Err(err) = request_registry_setup().await {
+            match &err {
+                BackgroundServiceClientError::Reqwest(inner) if inner.is_connect() => {
+                    bail!("MaximaBackgroundServiceUnavailable");
+                }
+                _ => return Err(err.into()),
+            }
+        }
     }
 
     Ok(())
@@ -554,14 +771,15 @@ async fn native_setup() -> anyhow::Result<()> {
 ///
 /// [enable_logger] - Whether to enable logging. Defaults to false. (Attention: Logging breaks Flutter's Hot Reload/Restart)
 pub async fn start_maxima(
-    enable_logger: Option<bool>
+    enable_logger: Option<bool>,
+    dummy_auth_storage: Option<bool>,
 ) -> anyhow::Result<()> {
     if is_maxima_running() {
         return Ok(());
     }
 
     native_setup().await?;
-    create_maxima_instance().await;
+    create_maxima_instance(dummy_auth_storage.unwrap_or(false)).await;
 
     let lsx_port = {
         let listener = TcpListener::bind("127.0.0.1:0").await.unwrap();

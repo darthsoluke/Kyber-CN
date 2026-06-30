@@ -20,13 +20,13 @@ import 'package:kyber_launcher/shared/ui/buttons/button.dart';
 import 'package:kyber_launcher/shared/ui/elements/kyber_input.dart';
 import 'package:kyber_launcher/shared/ui/elements/kyber_tab_bar.dart';
 import 'package:kyber_launcher/shared/ui/layout/bordered_content.dart';
-import 'package:kyber_launcher/shared/ui/utils/background_blur.dart';
 import 'package:logging/logging.dart';
 
 class ServerHost extends StatefulWidget {
-  const ServerHost({super.key, this.initialPage});
+  const ServerHost({super.key, this.initialPage, this.lanOnly = false});
 
   final int? initialPage;
+  final bool lanOnly;
 
   @override
   State<ServerHost> createState() => _ServerHostState();
@@ -42,6 +42,7 @@ class _ServerHostState extends State<ServerHost> {
   @override
   void initState() {
     _currentPage = widget.initialPage ?? 0;
+    createServer = widget.lanOnly;
     super.initState();
   }
 
@@ -53,6 +54,10 @@ class _ServerHostState extends State<ServerHost> {
           previous is! KyberStatusHosting && current is KyberStatusHosting ||
           previous is KyberStatusHosting && current is! KyberStatusHosting,
       listener: (context, state) {
+        if (widget.lanOnly) {
+          return;
+        }
+
         if (state is KyberStatusHosting) {
           Logger(
             'server_host',
@@ -70,15 +75,17 @@ class _ServerHostState extends State<ServerHost> {
           Expanded(
             flex: 6,
             child: BorderedContent(
-              overlappingBorder: !createServer &&! context
-                  .watch<ModerationCubit>()
-                  .state
-                  .selected,
+              overlappingBorder:
+                  !widget.lanOnly &&
+                  !createServer &&
+                  !context.watch<ModerationCubit>().state.selected,
               header: BlocBuilder<ModerationCubit, ModerationServerState>(
                 builder: (context, state) {
                   return Row(
                     children: [
-                      if (!createServer && !state.selected) ...[
+                      if (!widget.lanOnly &&
+                          !createServer &&
+                          !state.selected) ...[
                         KyberButton(
                           icon: const Icon(mt.Icons.add),
                           text: l10n.text('common.new'),
@@ -116,7 +123,7 @@ class _ServerHostState extends State<ServerHost> {
                         ),
                         const SizedBox(width: 15),
                       ],
-                      if (state.selected) ...[
+                      if (!widget.lanOnly && state.selected) ...[
                         SizedBox(
                           width: 250,
                           child: KyberTabBar(
@@ -175,7 +182,8 @@ class _ServerHostState extends State<ServerHost> {
                               .addSearchQuery,
                         ),
                       ),
-                      if (createServer || state.selected) ...[
+                      if (!widget.lanOnly &&
+                          (createServer || state.selected)) ...[
                         const SizedBox(width: 15),
                         SizedBox(
                           height: 33,
@@ -211,6 +219,13 @@ class _ServerHostState extends State<ServerHost> {
                     ][_currentPage];
                   }
 
+                  if (widget.lanOnly) {
+                    return [
+                      const MapRotationPage(),
+                      const ModCollectionSelector(),
+                    ][_currentPage];
+                  }
+
                   if (state.selected) {
                     return ServerModeration(
                       selectedPage: _currentPage,
@@ -229,6 +244,7 @@ class _ServerHostState extends State<ServerHost> {
               builder: (context, state) {
                 if (createServer) {
                   return ServerSettingsBox(
+                    lanOnly: widget.lanOnly,
                     key: ServerHostTutorial.serverSettingsKey,
                   );
                 }

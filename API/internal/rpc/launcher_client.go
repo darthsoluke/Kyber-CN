@@ -87,7 +87,7 @@ func NewLauncherServer(store *db.Store, minio *minio.Client, patronsCache *cache
 	launcherConfig := &LauncherConfig{}
 	err := util.LoadConfig("launcher-config.yaml", launcherConfig)
 	if err != nil {
-		panic("Failed to load launcher config file: " + err.Error())
+		logger.L().Warn("Launcher config disabled; using empty defaults", zap.Error(err))
 	}
 
 	amqpURL := os.Getenv("MOD_BRIDGE_AMQP_URL")
@@ -113,7 +113,7 @@ func NewLauncherServer(store *db.Store, minio *minio.Client, patronsCache *cache
 	wc := &WhitelistedChannels{}
 	err = util.LoadConfig("downloads.yaml", wc)
 	if err != nil {
-		panic("Failed to load downloads config file: " + err.Error())
+		logger.L().Warn("Launcher downloads whitelist disabled; using empty defaults", zap.Error(err))
 	}
 
 	for _, storage := range launcherConfig.ModStorage {
@@ -198,7 +198,11 @@ func (s *LauncherServer) QueryHostedMods(ctx context.Context, req *pbapi.QueryHo
 		region = &meta.Get("cf-ipcontinent")[0]
 	}
 
-	logger.L().Debug("QueryHostedModsRequest", zap.Any("req", req), zap.String("region", *region))
+	regionValue := ""
+	if region != nil {
+		regionValue = *region
+	}
+	logger.L().Debug("QueryHostedModsRequest", zap.Any("req", req), zap.String("region", regionValue))
 
 	for _, mod := range req.GetMods() {
 		if mod == nil {
@@ -224,6 +228,10 @@ func (s *LauncherServer) QueryHostedMods(ctx context.Context, req *pbapi.QueryHo
 }
 
 func (s *LauncherServer) Versions(ctx context.Context, request *pbapi.ServiceVersionsRequest) (*pbapi.ServiceVersionsResponse, error) {
+	if s.minio == nil {
+		return nil, status.Error(codes.Unavailable, "release storage is not configured")
+	}
+
 	var versionList []*pbapi.ServiceVersion
 	for version := range s.minio.ListObjects(ctx, "releases", minio.ListObjectsOptions{
 		WithVersions: true,
@@ -247,6 +255,10 @@ func (s *LauncherServer) Versions(ctx context.Context, request *pbapi.ServiceVer
 }
 
 func (s *LauncherServer) DownloadUrl(ctx context.Context, req *pbapi.ServiceVersionDownloadUrlRequest) (*pbapi.ServiceVersionDownloadUrl, error) {
+	if s.minio == nil {
+		return nil, status.Error(codes.Unavailable, "release storage is not configured")
+	}
+
 	val := ctx.Value("user")
 	user, _ := val.(*models.UserModel)
 
@@ -315,6 +327,10 @@ func (s *LauncherServer) PatronList(ctx context.Context, req *pbcommon.Empty) (*
 var fileSizeLimit int64 = 5 * 1024 * 1024 * 1024
 
 func (s *LauncherServer) UploadMod(stream grpc.BidiStreamingServer[pbapi.ModUploadRequest, pbcommon.Empty]) error {
+	if s.minio == nil {
+		return status.Error(codes.Unavailable, "mod storage is not configured")
+	}
+
 	ctx := stream.Context()
 	user := ctx.Value("user").(*models.UserModel)
 
@@ -496,6 +512,10 @@ func (s *LauncherServer) fetchMod(ctx context.Context, item *pbapi.HostedModQuer
 			Size:    mod.TotalSize,
 			Url:     u.String(),
 		}, nil
+	}
+
+	if s.minio == nil {
+		return nil, status.Error(codes.Unavailable, "mod storage is not configured")
 	}
 
 	u, err := s.minio.PresignedGetObject(ctx, "mod-storage", mod.FileName, time.Hour*24, nil)

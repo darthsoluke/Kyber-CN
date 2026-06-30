@@ -4,6 +4,9 @@ import 'package:ffigen/ffigen.dart';
 
 void main() {
   final packageRoot = Platform.script.resolve('../');
+  final libclang =
+      Platform.environment['KYBER_LIBCLANG'] ??
+      r'D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\libclang.dll';
 
   FfiGenerator(
     enums: .includeAll,
@@ -32,6 +35,6 @@ void main() {
       ],
     ),
   ).generate(
-    libclangDylib: Uri.file(r'D:\Program Files\Microsoft Visual Studio\18\Community\VC\Tools\Llvm\x64\bin\libclang.dll'),
+    libclangDylib: Uri.file(libclang),
   );
 }

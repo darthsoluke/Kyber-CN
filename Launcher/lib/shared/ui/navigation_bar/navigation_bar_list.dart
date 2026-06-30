@@ -1,5 +1,3 @@
-import 'dart:async';
-
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
@@ -7,6 +5,7 @@ import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/download_manager/models/download_state.dart';
 import 'package:kyber_launcher/features/download_manager/providers/download_manager_cubit.dart';
+import 'package:kyber_launcher/features/launcher_mode/providers/launcher_mode_cubit.dart';
 import 'package:kyber_launcher/shared/ui/navigation_bar/navigation_bar_seperator.dart';
 import 'package:kyber_launcher/shared/ui/navigation_bar/widgets/navigation_bar_item.dart';
 import 'package:kyber_launcher/shared/ui/navigation_bar/widgets/navigation_bar_sub_item.dart';
@@ -30,32 +29,49 @@ class NavigationBarEntry {
 }
 
 class _NavigationBarListState extends State<NavigationBarList> {
-  late StreamSubscription<String> navigationStream;
-
   int _activeItem = 0;
   bool _hovering = false;
   bool _showPositioned = false;
   int? _hoveringIndex;
 
-  List<NavigationBarEntry> getItems() => [
-    NavigationBarEntry(Localization.current.text('nav.home'), 'home'),
-    NavigationBarEntry(Localization.current.text('nav.host'), 'server_host'),
-    NavigationBarEntry(Localization.current.text('nav.stats'), 'stats'),
-    NavigationBarEntry(Localization.current.text('nav.mods'), 'mods'),
-    NavigationBarEntry(
-      Localization.current.text('nav.settings'),
-      'settings',
-    ),
-  ];
+  List<NavigationBarEntry> getItems({bool dedicatedOnly = false}) {
+    if (dedicatedOnly) {
+      return [
+        NavigationBarEntry(Localization.current.text('nav.lanJoin'), 'home'),
+        NavigationBarEntry(
+          Localization.current.text('nav.host'),
+          'server_host',
+        ),
+        NavigationBarEntry(Localization.current.text('nav.mods'), 'mods'),
+      ];
+    }
+
+    return [
+      NavigationBarEntry(Localization.current.text('nav.home'), 'home'),
+      NavigationBarEntry(Localization.current.text('nav.host'), 'server_host'),
+      NavigationBarEntry(Localization.current.text('nav.stats'), 'stats'),
+      NavigationBarEntry(Localization.current.text('nav.mods'), 'mods'),
+      NavigationBarEntry(
+        Localization.current.text('nav.settings'),
+        'settings',
+      ),
+    ];
+  }
+
+  int _routeIndex(List<NavigationBarEntry> items) {
+    return items.indexWhere(
+      (element) =>
+          element.route == widget.route.split('/').last.split('?').first,
+    );
+  }
 
   @override
   void didUpdateWidget(covariant NavigationBarList oldWidget) {
     if (oldWidget.route != widget.route) {
-      final items = getItems();
-      final index = items.indexWhere(
-        (element) =>
-            element.route == widget.route.split('/').last.split('?').first,
+      final items = getItems(
+        dedicatedOnly: context.read<LauncherModeCubit>().state.isDedicatedOnly,
       );
+      final index = _routeIndex(items);
 
       if (index != -1) {
         setState(() {
@@ -81,7 +97,7 @@ class _NavigationBarListState extends State<NavigationBarList> {
           alignment: Alignment.centerLeft,
           children: <Widget>[
             ...previousChildren,
-            if (currentChild != null) currentChild,
+            ?currentChild,
           ],
         ),
         child: Builder(
@@ -135,9 +151,10 @@ class _NavigationBarListState extends State<NavigationBarList> {
                   ),
                   RepaintBoundary(
                     child: BlocBuilder<DownloadCubit, DownloadState>(
-                      //buildWhen: (previous, current) => previous.currentDownload != current.currentDownload,
                       builder: (context, state) {
-                        final currentDownload = state is DownloadLoaded ? state.currentDownload : null;
+                        final currentDownload = state is DownloadLoaded
+                            ? state.currentDownload
+                            : null;
 
                         if (currentDownload == null) {
                           return const SizedBox.shrink();
@@ -156,7 +173,13 @@ class _NavigationBarListState extends State<NavigationBarList> {
               );
             }
 
-            final items = getItems();
+            final dedicatedOnly = context
+                .watch<LauncherModeCubit>()
+                .state
+                .isDedicatedOnly;
+            final items = getItems(dedicatedOnly: dedicatedOnly);
+            final routeIndex = _routeIndex(items);
+            final activeItem = routeIndex == -1 ? _activeItem : routeIndex;
 
             return Stack(
               clipBehavior: Clip.none,
@@ -173,7 +196,7 @@ class _NavigationBarListState extends State<NavigationBarList> {
                       padding: EdgeInsets.zero,
                       separatorBuilder: (context, index) {
                         final active =
-                            index == _activeItem || index == _activeItem + 1;
+                            index == activeItem || index == activeItem + 1;
                         final hover =
                             _hoveringIndex == index - 1 ||
                             _hoveringIndex == index;
@@ -188,9 +211,9 @@ class _NavigationBarListState extends State<NavigationBarList> {
                           return const SizedBox.shrink();
                         }
 
-                        index = index - 1;
-                        final item = items[index];
-                        final active = _hovering && _hoveringIndex == index;
+                        final itemIndex = index - 1;
+                        final item = items[itemIndex];
+                        final active = _hovering && _hoveringIndex == itemIndex;
                         final child = NavigationBarItem(
                           item: item,
                           onTap: () async {
@@ -202,19 +225,19 @@ class _NavigationBarListState extends State<NavigationBarList> {
 
                             // hack to make the positioned animation work
                             setState(() => _showPositioned = false);
-                            await Future.delayed(
+                            await Future<void>.delayed(
                               const Duration(milliseconds: 5),
                             );
                             setState(() {
-                              _activeItem = index;
+                              _activeItem = itemIndex;
                               _showPositioned = true;
                             });
                           },
                           onHover: (value) => setState(() {
                             _hovering = value;
-                            _hoveringIndex = value ? index : null;
+                            _hoveringIndex = value ? itemIndex : null;
                           }),
-                          active: _activeItem == index,
+                          active: activeItem == itemIndex,
                           hover: active,
                         );
 
@@ -223,10 +246,7 @@ class _NavigationBarListState extends State<NavigationBarList> {
                     ),
                     RepaintBoundary(
                       child: BlocBuilder<DownloadCubit, DownloadState>(
-                        //buildWhen: (previous, current) => previous.currentDownload != current.currentDownload,
                         builder: (context, state) {
-                          final currentDownload = state is DownloadLoaded ? state.currentDownload : null;
-
                           return MouseRegion(
                             cursor: SystemMouseCursors.click,
                             child: GestureDetector(

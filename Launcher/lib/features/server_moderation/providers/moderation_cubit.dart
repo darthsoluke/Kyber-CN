@@ -6,9 +6,8 @@ import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:grpc/grpc.dart' hide Server;
 import 'package:kyber/kyber.dart';
-import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/server_settings_box.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
@@ -156,10 +155,12 @@ class ModerationCubit extends Cubit<ModerationServerState> {
     };
 
     _logger.info('Sending command: $command');
-    sl.get<KyberGRPCService>().serverManagementClient.runCommand(
-      ServerRunCommandRequest(
-        id: state.id,
-        command: command,
+    unawaited(
+      sl.get<KyberGRPCService>().serverManagementClient.runCommand(
+        ServerRunCommandRequest(
+          id: state.id,
+          command: command,
+        ),
       ),
     );
   }
@@ -167,7 +168,7 @@ class ModerationCubit extends Cubit<ModerationServerState> {
   void unloadServer() {
     _logger.info('Unloading server');
 
-    _channel?.sink.close();
+    unawaited(_channel?.sink.close());
     _keepAliveTimer?.cancel();
 
     emit(const ModerationServerState());
@@ -203,8 +204,10 @@ class ModerationCubit extends Cubit<ModerationServerState> {
 
       _logger.info('Subscribing to server events');
 
+      final url = service.webSocketUri('/ws/client/${server.id}');
+      _logger.info('Subscribing to server events at $url');
       _channel = IOWebSocketChannel.connect(
-        'wss://api.${Preferences.admin.apiEnv}.kyber.gg/ws/client/${server.id}',
+        url,
         headers: {
           'Authorization': service.token,
         },
@@ -228,7 +231,7 @@ class ModerationCubit extends Cubit<ModerationServerState> {
                 ..add(data.console.message);
               emit(state.copyWith(commands: commands));
             }
-          } catch (e, s) {
+          } on Object catch (e, s) {
             _logger.severe('Error parsing event', e, s);
           }
         },
@@ -259,9 +262,9 @@ class ModerationCubit extends Cubit<ModerationServerState> {
 
       await Future<void>.delayed(const Duration(seconds: 3));
 
-      if (sl.isRegistered<MaximaGameInstance>() && state.players.isEmpty) {
-        final client = sl.get<MaximaGameInstance>().clientService;
-        final data = await client.commonClient.getInfo(Empty());
+      final instance = sl.get<MaximaInstanceService>().serverControlInstance;
+      if (instance != null && state.players.isEmpty) {
+        final data = await instance.clientService.commonClient.getInfo(Empty());
         if (data.hasServer() &&
             state.players.isEmpty &&
             data.server.playerList.isNotEmpty) {
@@ -299,7 +302,7 @@ class ModerationCubit extends Cubit<ModerationServerState> {
         severity: InfoBarSeverity.error,
       );
       unloadServer();
-    } catch (e, s) {
+    } on Object catch (e, s) {
       _logger.severe('Error loading server:', e, s);
       NotificationService.showNotification(
         title: 'Server error',

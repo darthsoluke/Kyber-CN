@@ -67,7 +67,7 @@ type JsonWebKeySet struct {
 func LoadJwks() (map[string]*rsa.PublicKey, error) {
 	endpoint := os.Getenv("EA_JWKS_ENDPOINT")
 	if endpoint == "" {
-		panic("EA_JWKS_ENDPOINT environment variable is not set")
+		return nil, errors.New("EA_JWKS_ENDPOINT environment variable is not set")
 	}
 
 	resp, err := http.Get(endpoint)

@@ -8,16 +8,17 @@ import (
 	"encoding/json"
 	"encoding/pem"
 	"fmt"
-	"github.com/ArmchairDevelopers/Kyber/API/pkg/db"
-	"github.com/ArmchairDevelopers/Kyber/API/pkg/logger"
-	"github.com/ArmchairDevelopers/Kyber/API/pkg/models"
-	"go.uber.org/zap"
 	"net/http"
 	"os"
+	"path/filepath"
 	"strings"
 	"time"
 
+	"github.com/ArmchairDevelopers/Kyber/API/pkg/db"
+	"github.com/ArmchairDevelopers/Kyber/API/pkg/logger"
+	"github.com/ArmchairDevelopers/Kyber/API/pkg/models"
 	"github.com/golang-jwt/jwt/v5"
+	"go.uber.org/zap"
 )
 
 type DockerAuthState struct {
@@ -37,69 +38,82 @@ type Claims struct {
 	Sub    string                   `json:"sub"`
 }
 
-func NewDockerAuthState(store *db.Store) DockerAuthState {
+func NewDockerAuthState(store *db.Store) (*DockerAuthState, error) {
 	pubPEMPath := os.Getenv("DOCKER_CRT_PATH")
 	if pubPEMPath == "" {
-		panic("DOCKER_CRT_PATH env var required")
+		return nil, nil
 	}
 
-	path := fmt.Sprintf("/srv/kyber-api/docker/%s", pubPEMPath)
+	path := resolveDockerKeyPath(pubPEMPath)
 	pubPEM, err := os.ReadFile(path)
 	if err != nil {
-		panic("read public key: " + err.Error())
+		return nil, fmt.Errorf("read public key: %w", err)
 	}
 
 	block, _ := pem.Decode(pubPEM)
 	if block == nil || !strings.Contains(block.Type, "PUBLIC") {
-		panic("invalid public key PEM")
+		return nil, fmt.Errorf("invalid public key PEM")
 	}
 
 	pubIfc, err := x509.ParsePKIXPublicKey(block.Bytes)
 	if err != nil {
-		panic("parse public key: " + err.Error())
+		return nil, fmt.Errorf("parse public key: %w", err)
 	}
 
 	pubKey, ok := pubIfc.(*rsa.PublicKey)
 	if !ok {
-		panic("public key is not RSA")
+		return nil, fmt.Errorf("public key is not RSA")
 	}
 
 	keyID, err := computeKeyID(pubKey)
 	if err != nil {
-		panic("compute key ID: " + err.Error())
+		return nil, fmt.Errorf("compute key ID: %w", err)
 	}
 
 	privPEMPath := os.Getenv("DOCKER_KEY_PATH")
 	if privPEMPath == "" {
-		panic("DOCKER_KEY_PATH env var required")
+		return nil, fmt.Errorf("DOCKER_KEY_PATH env var required when DOCKER_CRT_PATH is set")
 	}
 
-	path = fmt.Sprintf("/srv/kyber-api/docker/%s", privPEMPath)
+	path = resolveDockerKeyPath(privPEMPath)
 	privPEM, err := os.ReadFile(path)
 	if err != nil {
-		panic("read private key: " + err.Error())
+		return nil, fmt.Errorf("read private key: %w", err)
 	}
 
 	block, _ = pem.Decode(privPEM)
 	if block == nil || !strings.Contains(block.Type, "PRIVATE") {
-		panic("invalid private key PEM")
+		return nil, fmt.Errorf("invalid private key PEM")
 	}
 
 	privKeyIfc, err := x509.ParsePKCS8PrivateKey(block.Bytes)
 	if err != nil {
-		panic("parse private key: " + err.Error())
+		return nil, fmt.Errorf("parse private key: %w", err)
 	}
 
 	privKey, ok := privKeyIfc.(*rsa.PrivateKey)
 	if !ok {
-		panic("private key is not RSA")
+		return nil, fmt.Errorf("private key is not RSA")
 	}
 
-	return DockerAuthState{
+	return &DockerAuthState{
 		store:      store,
 		privateKey: privKey,
 		keyID:      keyID,
+	}, nil
+}
+
+func resolveDockerKeyPath(path string) string {
+	if filepath.IsAbs(path) {
+		return path
 	}
+
+	baseDir := os.Getenv("DOCKER_KEY_DIR")
+	if baseDir == "" {
+		baseDir = "/srv/kyber-api/docker"
+	}
+
+	return filepath.Join(baseDir, path)
 }
 
 func computeKeyID(pub *rsa.PublicKey) (string, error) {

@@ -70,14 +70,27 @@ void ListenToStateChanges(const std::shared_ptr<grpc::Channel>& channel) {
 
 API::API(std::string token)
 {
-    auto credentials = grpc::SslCredentials(GetSslOptions());
+    const std::string insecureValue = PlatformUtils::GetEnv("KYBER_API_INSECURE", "0");
+    const bool apiInsecure = insecureValue == "1" || insecureValue == "true" || insecureValue == "TRUE" ||
+        insecureValue == "yes" || insecureValue == "YES";
+    auto credentials = apiInsecure ? grpc::InsecureChannelCredentials() : grpc::SslCredentials(GetSslOptions());
 
     std::string rpcUri = PlatformUtils::GetEnv("KYBER_API_HOSTNAME", "api-rpc.prod.kyber.gg");
     std::string httpUri = PlatformUtils::GetEnv("KYBER_HTTP_HOSTNAME", "api.prod.kyber.gg");
     
     std::shared_ptr<Channel> channel = grpc::CreateChannel(rpcUri, credentials);
+    KYBER_LOG(Info, "LAN_STAGE[api.grpc.channel] rpcUri=" << rpcUri << " insecure=" << apiInsecure);
 
-    m_stateListenerThread = std::thread(ListenToStateChanges, channel);
+    const bool offlineDirectMode = PlatformUtils::GetEnv("KYBER_ONLINE_MODE", "1") == "0";
+    if (offlineDirectMode)
+    {
+        KYBER_LOG(Info, "LAN_STAGE[api.grpc.state_listener.skip] reason=offline_direct");
+    }
+    else
+    {
+        KYBER_LOG(Info, "LAN_STAGE[api.grpc.state_listener.start] rpcUri=" << rpcUri);
+        m_stateListenerThread = std::thread(ListenToStateChanges, channel);
+    }
 
     m_clientServer = std::make_unique<ClientServerAPI>(channel, &m_asyncManager, token);
     m_proxy = std::make_unique<ProxyAPI>(channel, token);

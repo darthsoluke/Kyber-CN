@@ -5,11 +5,7 @@ import 'package:flutter/scheduler.dart';
 import 'package:flutter_rust_bridge/flutter_rust_bridge_for_generated.dart';
 import 'package:kyber/kyber.dart';
 import 'package:kyber_collection/kyber_collection.dart';
-import 'package:kyber_launcher/core/config/colors.dart';
 import 'package:kyber_launcher/core/core.dart';
-import 'package:kyber_launcher/core/routing/app_router.dart';
-import 'package:kyber_launcher/core/services/module_version_service.dart';
-import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/kyber/dialogs/kyber_anti_virus_exclusion.dart';
 import 'package:kyber_launcher/features/maxima/dialogs/maxima_expired_session_dialog.dart';
 import 'package:kyber_launcher/features/maxima/dialogs/maxima_game_locator_dialog.dart';
@@ -39,6 +35,18 @@ class MaximaStartGameDialog extends StatefulWidget {
   State<MaximaStartGameDialog> createState() => _MaximaStartGameDialogState();
 }
 
+class MaximaLaunchResult {
+  const MaximaLaunchResult._({required this.success, this.message});
+
+  const MaximaLaunchResult.success() : this._(success: true);
+
+  const MaximaLaunchResult.failure(String message)
+    : this._(success: false, message: message);
+
+  final bool success;
+  final String? message;
+}
+
 class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
   Timer? _gameStatusTimer;
   StreamSubscription<String>? _gameEvents;
@@ -47,7 +55,22 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
   bool preloadingMods = false;
   String? lastEvent;
 
-  bool _isOfflineLanServerLaunch(InitializeRequest request) {
+  bool _isOfflineDirectRequest(InitializeRequest request) {
+    if (request.hasStartServer() &&
+        request.startServer.hasOnlineMode() &&
+        !request.startServer.onlineMode) {
+      return true;
+    }
+
+    if (request.hasJoinServer()) {
+      final joinServer = request.joinServer;
+      return joinServer.joinToken.isEmpty && joinServer.id.startsWith('lan:');
+    }
+
+    return false;
+  }
+
+  bool _isDedicatedServerRequest(InitializeRequest request) {
     return request.hasStartServer() &&
         request.startServer.hasOnlineMode() &&
         !request.startServer.onlineMode;
@@ -65,189 +88,240 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
 
   @override
   void initState() {
-    SchedulerBinding.instance.addPostFrameCallback((_) async {
-      final req = widget.initializeRequest ?? .new();
-      final moduleVersionService = ModuleVersionService();
-      final requiresModSupport = _requiresModuleModSupport(req);
-      try {
-        await moduleVersionService.installBundledModuleIfAvailable(
-          requireModSupport: requiresModSupport,
-        );
-      } catch (e, st) {
-        Logger.root.warning(
-          'Failed to prepare bundled module.',
-          e,
-          st,
-        );
-      }
+    SchedulerBinding.instance.addPostFrameCallback((_) => _start());
+    super.initState();
+  }
 
-      final hasBundledModule = moduleVersionService.hasLaunchableModule(
+  Future<void> _start() async {
+    final req = widget.initializeRequest ?? .new();
+    _setLastEvent('maxima.progress.prepareModule');
+    final moduleVersionService = ModuleVersionService();
+    final requiresModSupport = _requiresModuleModSupport(req);
+    try {
+      await moduleVersionService.installBundledModuleIfAvailable(
         requireModSupport: requiresModSupport,
       );
-      if (!hasBundledModule) {
-        const message =
-            'Bundled Kyber module is missing or incomplete. Please re-extract the full Release package.';
-        Logger.root.severe(message);
-        NotificationService.showNotification(
-          message: message,
-          severity: InfoBarSeverity.error,
-        );
-        Navigator.of(context).pop();
+    } on Object catch (e, st) {
+      Logger.root.warning(
+        'Failed to prepare bundled module.',
+        e,
+        st,
+      );
+    }
+
+    final hasBundledModule = moduleVersionService.hasLaunchableModule(
+      requireModSupport: requiresModSupport,
+    );
+    if (!hasBundledModule) {
+      const message =
+          'Bundled Kyber module is missing or incomplete. '
+          'Please re-extract the full Release package.';
+      Logger.root.severe(message);
+      NotificationService.showNotification(
+        message: message,
+        severity: InfoBarSeverity.error,
+      );
+      _finishFailure(message);
+      return;
+    }
+
+    try {
+      await _prepareMods(req);
+      _setLastEvent('maxima.progress.checkService');
+      await checkService();
+      final dedicatedServerRequest = _isDedicatedServerRequest(req);
+      _setLastEvent('maxima.progress.launchBfii');
+      final instance = await MaximaHelper.startGame(
+        gameDataPath: widget.gameDataDir,
+        initializeRequest: req,
+        mods: widget.mods,
+      );
+      if (!mounted) {
         return;
       }
 
-      if (Preferences.general.enabledPreloadMods) {
-        setState(() => preloadingMods = true);
-        final preloadedMods = await PreloadedModsHelper.preloadMods();
-        if (!mounted) {
-          return;
-        }
+      if (dedicatedServerRequest) {
+        _finishSuccess();
+        return;
+      }
 
-        req.modData = .new(
-          mods: req.modData.mods,
-          explodedMods: req.modData.explodedMods,
-          basePath: req.modData.basePath,
-          modPaths: [
-            ...req.modData.modPaths,
-            ...preloadedMods,
-          ],
+      _gameEvents = instance.eventStream.listen(
+        (event) {
+          setState(() => lastEvent = event);
+
+          if ([
+            'IsProgressiveInstallationAvailable',
+            'GetGameInfo',
+            'GetInfo',
+          ].contains(event)) {
+            unawaited(_gameEvents?.cancel() ?? Future<void>.value());
+            _finishSuccess();
+          }
+        },
+        onDone: () => _finishFailure(
+          'Game event stream closed before startup completed.',
+        ),
+        cancelOnError: true,
+        onError: (Object error) =>
+            _finishFailure('Game event stream error: $error'),
+      );
+    } on Object catch (error, stackTrace) {
+      _handleLaunchError(error, stackTrace);
+    }
+  }
+
+  Future<void> _prepareMods(InitializeRequest req) async {
+    final offlineDirectRequest = _isOfflineDirectRequest(req);
+    if (Preferences.general.enabledPreloadMods && !offlineDirectRequest) {
+      _setLastEvent('maxima.progress.preloadMods');
+      setState(() => preloadingMods = true);
+      final preloadedMods = await PreloadedModsHelper.preloadMods();
+      if (!mounted) {
+        return;
+      }
+
+      req.modData = .new(
+        mods: req.modData.mods,
+        explodedMods: req.modData.explodedMods,
+        basePath: req.modData.basePath,
+        modPaths: [
+          ...req.modData.modPaths,
+          ...preloadedMods,
+        ],
+      );
+    } else if (offlineDirectRequest) {
+      Logger.root.info(
+        'LAN_STAGE[maxima.dialog.preloaded_mods.skip] '
+        'reason=offline_direct',
+      );
+    }
+  }
+
+  void _handleLaunchError(Object error, StackTrace stackTrace) {
+    unawaited(_gameEvents?.cancel() ?? Future<void>.value());
+    final message = _launchErrorMessage(error);
+
+    if (error is AnyhowException) {
+      if (error.message.contains('Game not found')) {
+        unawaited(
+          showKyberDialog(
+            context: navigatorKey.currentContext!,
+            builder: (_) => const MaximaGameNotFoundDialog(),
+          ),
+        );
+      } else if (error.message.contains('Game not installed')) {
+        unawaited(
+          showKyberDialog(
+            context: navigatorKey.currentContext!,
+            builder: (_) => const MaximaGameLocatorDialog(),
+          ),
+        );
+      } else if (error.message.contains('remote io error')) {
+        unawaited(
+          showKyberDialog(
+            context: navigatorKey.currentContext!,
+            builder: (_) => const KyberAntiVirusExclusion(),
+          ),
+        );
+      } else if (error.message.contains('invalid redirect')) {
+        unawaited(
+          showKyberDialog(
+            context: navigatorKey.currentContext!,
+            builder: (_) => const MaximaExpiredSessionDialog(),
+          ),
         );
       }
 
-      await checkService();
-      await MaximaHelper.startGame(
-            gameDataPath: widget.gameDataDir,
-            initializeRequest: req,
-            mods: widget.mods,
-          )
-          .then((value) async {
-            if (!mounted) {
-              return;
-            }
-
-            _gameEvents = value.eventStream.listen(
-              (e) {
-                setState(() => lastEvent = e);
-
-                if ([
-                      'IsProgressiveInstallationAvailable',
-                      'GetGameInfo',
-                      'GetInfo',
-                    ].contains(e) &&
-                    mounted) {
-                  _gameEvents?.cancel();
-                  if (mounted) {
-                    Navigator.of(context).pop();
-                  }
-                }
-              },
-              onDone: () {
-                if (mounted) {
-                  Navigator.of(context).pop();
-                }
-              },
-              cancelOnError: true,
-              onError: (_) {
-                if (mounted) {
-                  Navigator.of(context).pop();
-                }
-              },
-            );
-          })
-          .onError((error, stackTrace) {
-            _gameEvents?.cancel();
-            if (error is AnyhowException) {
-              if (mounted) {
-                Navigator.of(context).pop();
-              }
-
-              if (error.message.contains('Game not found')) {
-                showKyberDialog(
-                  context: navigatorKey.currentContext!,
-                  builder: (_) => const MaximaGameNotFoundDialog(),
-                );
-                return;
-              } else if (error.message.contains('Game not installed')) {
-                showKyberDialog(
-                  context: navigatorKey.currentContext!,
-                  builder: (_) => const MaximaGameLocatorDialog(),
-                );
-                return;
-              } else if (error.message.contains('remote io error')) {
-                showKyberDialog(
-                  context: navigatorKey.currentContext!,
-                  builder: (_) => const KyberAntiVirusExclusion(),
-                );
-                return;
-              } else if (error.message.contains('invalid redirect')) {
-                showKyberDialog(
-                  context: navigatorKey.currentContext!,
-                  builder: (_) => const MaximaExpiredSessionDialog(),
-                );
-              }
-
-              NotificationService.showNotification(
-                message: Localization.current.text(
-                  'maxima.failedToStartGame',
-                  params: {'message': error.message},
+      NotificationService.showNotification(
+        message: Localization.current.text(
+          'maxima.failedToStartGame',
+          params: {'message': error.message},
+        ),
+        severity: InfoBarSeverity.error,
+      );
+    } else if (error is PanicException) {
+      unawaited(
+        showKyberDialog(
+          context: navigatorKey.currentContext!,
+          builder: (context) {
+            final l10n = context.l10n;
+            return KyberContentDialog(
+              title: Text(l10n.text('maxima.failedToStartGameTitle')),
+              content: Text(
+                error.message,
+                style: const TextStyle(
+                  fontFamily: FontFamily.battlefrontUI,
+                  fontSize: 17,
                 ),
-                severity: InfoBarSeverity.error,
-              );
-            } else if (error is PanicException) {
-              if (mounted) {
-                Navigator.of(context).pop();
-              }
-
-              showKyberDialog(
-                context: navigatorKey.currentContext!,
-                builder: (context) {
-                  final l10n = context.l10n;
-                  return KyberContentDialog(
-                    title: Text(l10n.text('maxima.failedToStartGameTitle')),
-                    content: Text(
-                      error.message,
-                      style: const TextStyle(
-                        fontFamily: FontFamily.battlefrontUI,
-                        fontSize: 17,
-                      ),
-                    ),
-                    actions: [
-                      KyberButton(
-                        onPressed: () => Navigator.of(context).pop(),
-                        text: l10n.text('common.close'),
-                      ),
-                    ],
-                  );
-                },
-              );
-            } else {
-              NotificationService.showNotification(
-                message: Localization.current.text(
-                  'maxima.failedToStartGame',
-                  params: {'message': '$error'},
+              ),
+              actions: [
+                KyberButton(
+                  onPressed: () => Navigator.of(context).pop(),
+                  text: l10n.text('common.close'),
                 ),
-                severity: InfoBarSeverity.error,
-              );
-            }
-
-            if (mounted) {
-              Navigator.of(context).pop();
-            }
-
-            Sentry.captureException(error, stackTrace: stackTrace);
-            Logger.root.severe(
-              'Failed to start game: $error',
-              error,
-              stackTrace,
+              ],
             );
-          });
-    });
-    super.initState();
+          },
+        ),
+      );
+    } else {
+      NotificationService.showNotification(
+        message: Localization.current.text(
+          'maxima.failedToStartGame',
+          params: {'message': '$error'},
+        ),
+        severity: InfoBarSeverity.error,
+      );
+    }
+
+    unawaited(Sentry.captureException(error, stackTrace: stackTrace));
+    Logger.root.severe(
+      'Failed to start game: $error',
+      error,
+      stackTrace,
+    );
+    _finishFailure(message);
+  }
+
+  String _launchErrorMessage(Object error) {
+    if (error is AnyhowException) {
+      return error.message;
+    }
+
+    if (error is PanicException) {
+      return error.message;
+    }
+
+    return '$error';
+  }
+
+  void _finishSuccess() {
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pop(const MaximaLaunchResult.success());
+  }
+
+  void _finishFailure(String message) {
+    if (!mounted) {
+      return;
+    }
+
+    Navigator.of(context).pop(MaximaLaunchResult.failure(message));
+  }
+
+  void _setLastEvent(String messageKey) {
+    if (!mounted) {
+      return;
+    }
+
+    setState(() => lastEvent = Localization.current.text(messageKey));
   }
 
   @override
   void dispose() {
-    _gameEvents?.cancel();
+    unawaited(_gameEvents?.cancel() ?? Future<void>.value());
     _gameStatusTimer?.cancel();
     super.dispose();
   }
@@ -255,8 +329,15 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
+    final dedicatedServerRequest = _isDedicatedServerRequest(
+      widget.initializeRequest ?? InitializeRequest(),
+    );
     return KyberContentDialog(
-      title: Text(l10n.text('maxima.gameLaunching')),
+      title: Text(
+        dedicatedServerRequest
+            ? l10n.text('maxima.dedicatedLaunching')
+            : l10n.text('maxima.gameLaunching'),
+      ),
       constraints: const BoxConstraints(maxWidth: 500, maxHeight: 300),
       content: Column(
         children: [
@@ -278,7 +359,9 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
                 ),
               if (!updating)
                 Text(
-                  l10n.text('maxima.startingGame'),
+                  dedicatedServerRequest
+                      ? l10n.text('maxima.startingDedicated')
+                      : l10n.text('maxima.startingGame'),
                   style: FluentTheme.of(context).typography.bodyLarge,
                 ),
             ],
@@ -287,7 +370,9 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
             height: 10,
           ),
           Text(
-            l10n.text('maxima.startingGameDescription'),
+            dedicatedServerRequest
+                ? l10n.text('maxima.startingDedicatedDescription')
+                : l10n.text('maxima.startingGameDescription'),
             style: FluentTheme.of(context).typography.body?.copyWith(
               color: kWhiteColor,
             ),

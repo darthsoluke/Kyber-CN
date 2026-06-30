@@ -15,7 +15,9 @@ pub async fn extract(file_path: String, target_dir: String) -> anyhow::Result<()
             Some(path) => path.to_owned(),
             None => continue,
         };
-        let final_path = std::path::Path::new(&*target_dir).join(outpath.file_name().unwrap().to_str().unwrap()).to_owned();
+        let final_path = std::path::Path::new(&*target_dir)
+            .join(outpath.file_name().unwrap().to_str().unwrap())
+            .to_owned();
 
         println!(
             "File {} extracted to \"{}\" ({} bytes)",

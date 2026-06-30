@@ -37,6 +37,8 @@ part 'server_browser_state.dart';
 class ServerBrowserCubit extends Cubit<ServerBrowserState> {
   ServerBrowserCubit() : super(const .new());
 
+  static final _logger = Logger('server_browser');
+
   Timer? _downloadChecker;
   bool _running = false;
 
@@ -55,13 +57,20 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
   }
 
   void joinServer({bool enabledDownload = true}) {
+    _logger.info(
+      'LAN_STAGE[browser.join.requested] '
+      'enabledDownload=$enabledDownload '
+      'selectedType=${state.selectedServer.runtimeType}',
+    );
     if (hasAllRequiredMods()) {
+      _logger.info('LAN_STAGE[browser.join.mods.ready]');
       if (state.selectedServer! is! ServerGroup) {
         emit(state.copyWith(selectedServer: state.selectedServer! as Server));
       }
 
-      _joinServer();
+      unawaited(_joinServer());
     } else if (enabledDownload) {
+      _logger.info('LAN_STAGE[browser.join.downloads.required]');
       emit(
         state.copyWith(
           joiningServer: (state.selectedServer is ServerGroup
@@ -69,7 +78,7 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
               : (state.selectedServer! as Server)),
         ),
       );
-      _startDownloads();
+      unawaited(_startDownloads());
     }
   }
 
@@ -93,30 +102,51 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
       final initialServerData = (server is ServerGroup)
           ? server.getPreferredServer()
           : server as Server;
+      final initialIsLan = LanServerHelper.isLanServer(initialServerData);
+      final initialApiBacked = LanServerHelper.hasApiBackedJoin(
+        initialServerData,
+      );
+      _logger.info(
+        'LAN_STAGE[browser.join.dialog.open] '
+        'id=${initialServerData.id} isLan=$initialIsLan '
+        'apiBackedJoin=$initialApiBacked '
+        'requiresPassword=${initialServerData.requiresPassword}',
+      );
 
-      showKyberDialog<JoinDialogResult?>(
-        context: navigatorKey.currentContext!,
-        builder: (context) => CosmeticModsDialog(
-          server: server,
-        ),
-      ).then(dialogCompleted.complete);
+      unawaited(
+        showKyberDialog<JoinDialogResult?>(
+          context: navigatorKey.currentContext!,
+          builder: (context) => CosmeticModsDialog(
+            server: server,
+          ),
+        ).then(dialogCompleted.complete),
+      );
 
-      if (!LanServerHelper.isLanServer(initialServerData) ||
-          LanServerHelper.hasApiBackedJoin(initialServerData)) {
+      if (!initialIsLan || initialApiBacked) {
+        _logger.info(
+          'LAN_STAGE[browser.join.api_preflight.start] '
+          'id=${initialServerData.id} isLan=$initialIsLan',
+        );
         await sl
             .get<KyberGRPCService>()
             .serverBrowserClient
             .getServer(ServerRequest(id: initialServerData.id))
             .then((_) => null)
             .onError((e, s) {
+              _logger.warning(
+                'LAN_STAGE[browser.join.api_preflight.error] '
+                'id=${initialServerData.id} error=$e',
+              );
               if (dialogCompleted.isCompleted) {
                 return;
               }
 
               if (e is GrpcError && e.code == StatusCode.notFound) {
-                BlocProvider.of<ServerListCubit>(
-                  navigatorKey.currentContext!,
-                ).loadServers();
+                unawaited(
+                  BlocProvider.of<ServerListCubit>(
+                    navigatorKey.currentContext!,
+                  ).loadServers(),
+                );
                 Navigator.pop(navigatorKey.currentContext!);
                 NotificationService.showNotification(
                   message: 'Server not found!',
@@ -131,21 +161,38 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
                 );
               }
             });
+      } else {
+        _logger.info(
+          'LAN_STAGE[browser.join.api_preflight.skip] '
+          'id=${initialServerData.id} reason=lan_direct',
+        );
       }
 
-      await dialogCompleted.future;
       final result = await dialogCompleted.future;
 
       if (result == null) {
+        _logger.info(
+          'LAN_STAGE[browser.join.dialog.cancelled] id=${initialServerData.id}',
+        );
         emit(.new(selectedServer: server));
         return;
       }
+      _logger.info(
+        'LAN_STAGE[browser.join.dialog.completed] '
+        'id=${initialServerData.id} spectator=${result.spectator} '
+        'passwordPresent=${result.password.isNotEmpty}',
+      );
 
       final selectedServer = server is! ServerGroup
           ? server as Server
           : server.servers.firstWhere(
               (e) => e.meta['instance_id'] == result.instanceId,
             );
+      _logger.info(
+        'LAN_STAGE[browser.join.dispatch] '
+        'id=${selectedServer.id} ip=${selectedServer.ip} '
+        'port=${selectedServer.port}',
+      );
       await KyberServerHelper.joinServer(
         selectedServer,
         selectedCollection: result.collection,
@@ -154,8 +201,8 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
       );
 
       emit(ServerBrowserState(selectedServer: server));
-    } catch (e, s) {
-      Logger('server_browser').severe('Error joining server!', e, s);
+    } on Object catch (e, s) {
+      _logger.severe('LAN_STAGE[browser.join.error]', e, s);
       emit(const ServerBrowserState());
       if (e is GrpcError) {
         if (e.code == StatusCode.notFound) {
@@ -244,7 +291,7 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
       await sl.get<DownloadOrchestrator>().enqueueDownload(request);
     } on MissingNexusAuthException {
       rethrow;
-    } catch (e, s) {
+    } on Object catch (e, s) {
       Logger(
         'server_browser',
       ).severe('Error finding download for ${mod.name}', e, s);
@@ -296,7 +343,7 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
           .searchMods(
             mb.SearchModsRequest(mods: chunk),
           )
-          .catchError((e) {
+          .catchError((Object e) {
             Logger('server_browser').severe('Error searching mods', e);
             NotificationService.showNotification(
               message: 'Error searching mods: $e',
@@ -333,7 +380,8 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
       final modId = resp.$1;
       final file = resp.$2.first;
       final link =
-          'https://www.nexusmods.com/starwarsbattlefront22017/mods/$modId?tab=files&file_id=${file.fileId}';
+          'https://www.nexusmods.com/starwarsbattlefront22017/mods/'
+          '$modId?tab=files&file_id=${file.fileId}';
       final fMod = mb.Mod(
         name: file.name,
         link: link,
@@ -362,9 +410,11 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
     }
 
     if (failedMods > 0) {
+      final label = failedMods > 1 ? 'mods' : 'mod';
       NotificationService.showNotification(
         message:
-            "For $failedMods ${failedMods > 1 ? "mods" : "mod"} no download could be found. Some mods can be found in the mod browser.",
+            'For $failedMods $label no download could be found. '
+            'Some mods can be found in the mod browser.',
       );
     }
 
@@ -376,7 +426,7 @@ class ServerBrowserCubit extends Cubit<ServerBrowserState> {
       }
 
       _running = true;
-      await sl<ModService>().refreshCompleter!.future;
+      await sl<ModService>().refreshCompleter.future;
       if (!hasAllRequiredMods()) {
         final cubit = BlocProvider.of<DownloadCubit>(
           navigatorKey.currentContext!,

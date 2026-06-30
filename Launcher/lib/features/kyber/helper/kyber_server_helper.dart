@@ -1,4 +1,3 @@
-import 'package:collection/collection.dart';
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:grpc/grpc.dart' hide Server;
@@ -8,14 +7,10 @@ import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_proxy_cubit.dart';
-import 'package:kyber_launcher/features/maxima/dialogs/maxima_start_game_dialog.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
-import 'package:kyber_launcher/features/mod_collections/providers/mod_collection_cubit.dart';
-import 'package:kyber_launcher/features/mods/extensions/frosty_collection_extension.dart';
-import 'package:kyber_launcher/features/mods/services/mod_service.dart';
+import 'package:kyber_launcher/features/kyber/services/server_join_collection_service.dart';
+import 'package:kyber_launcher/features/kyber/services/server_join_dispatch_service.dart';
+import 'package:kyber_launcher/features/kyber/services/server_join_plan_service.dart';
 import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
-import 'package:kyber_launcher/injection_container.dart';
-import 'package:kyber_launcher/shared/ui/dialog/kyber_dialog.dart';
 import 'package:logging/logging.dart';
 
 class KyberServerHelper {
@@ -27,153 +22,45 @@ class KyberServerHelper {
     bool? spectator,
     String? password,
   }) async {
-    final localMods = sl.get<ModService>().mods;
-    final mods = server.mods.map(
-      (e) => localMods.firstWhere(
-        (element) => element.toKyberString() == '${e.name} (${e.version})',
-      ),
-    );
-    final collectionMods = <CollectionMod>[];
-    for (final mod in mods) {
-      if (mod.isCollection) {
-        final cMods = mod.getMods()!.map(
-          (e) => localMods
-              .firstWhereOrNull((x) => x.filename == e)
-              ?.toCollectionMod(),
-        );
-        if (cMods.contains(null)) {
-          throw Exception(
-            '"${mod.details.name}" is corrupted. Please reinstall it',
-          );
-        }
-
-        collectionMods.addAll(cMods.whereType<CollectionMod>());
-      } else {
-        collectionMods.add(mod.toCollectionMod());
-      }
-    }
-
-    final tmpCollection = ModCollectionMetaData(
-      title: server.name,
-      mods: [
-        if (selectedCollection != null &&
-            !selectedCollection.containsGameplayMods())
-          ...collectionMods,
-        if (selectedCollection != null) ...selectedCollection.mods,
-      ],
-      localId: server.id,
-    );
-
-    final isLanServer = LanServerHelper.isLanServer(server);
     LanServerHelper.remember(server);
 
-    String joinToken = '';
-    String joinServerId = server.id;
-    var serverIp = server.ip;
-
     try {
-      final service = sl.get<KyberGRPCService>();
-      if (isLanServer) {
-        if (!LanServerHelper.isJoinable(server)) {
-          throw Exception(
-            'This LAN server is running in online mode but is not registered with Kyber.',
-          );
-        }
-
-        if (LanServerHelper.hasApiBackedJoin(server)) {
-          final tokenResponse = await service.clientServerClient.createJoinToken(
-            .new(
-              server: server.id,
-              password: password,
-            ),
-          );
-          joinToken = tokenResponse.token;
-        } else {
-          joinServerId = server.id.isEmpty
-              ? LanServerHelper.makeSyntheticId(server.ip, server.port)
-              : server.id;
-        }
-      } else {
-        final currentIp = await KyberNetworkHelper.getCurrentIpAddress();
-        if (serverIp == currentIp) {
-          serverIp = '127.0.0.1';
-        }
-
-        final proxies = navigatorKey.currentContext!
-            .read<KyberProxyCubit>()
-            .state
-            .proxies;
-        var selectedProxy = proxies.firstWhereOrNull(
-          (p) => p.proxy.id == Preferences.general.proxy,
-        );
-        if (selectedProxy == null) {
-          selectedProxy = proxies.firstOrNull;
-          _logger.warning(
-            'No proxy selected, using ${selectedProxy?.proxy.name} instead',
-          );
-          if (selectedProxy == null) {
-            _logger.severe('No proxy available');
-            throw Exception('No proxy available');
-          }
-
-          NotificationService.showNotification(
-            message:
-                'Selected Proxy not available, using ${selectedProxy.proxy.name} instead',
-            severity: InfoBarSeverity.warning,
-          );
-        }
-
-        _logger.info(
-          'Joining server with proxy ${selectedProxy.proxy.name} (${selectedProxy.proxy.ip})',
-        );
-
-        final tokenResponse = await service.clientServerClient.createJoinToken(
-          .new(
-            server: server.id,
-            password: password,
-          ),
-        );
-        joinToken = tokenResponse.token;
-
-        if (server.requiresProxy) {
-          serverIp = selectedProxy.proxy.ip;
-        }
-      }
-
-      final joinRequest = JoinServerRequest(
-        id: joinServerId,
-        ip: isLanServer ? server.ip : serverIp,
-        port: server.requiresProxy && !isLanServer ? null : server.port,
-        type: server.requiresProxy && !isLanServer ? .PROXIED : .DIRECT,
-        spectate: spectator ?? false,
-        joinToken: joinToken,
-        password: password ?? '',
+      final tmpCollection = ServerJoinCollectionService().build(
+        server: server,
+        selectedCollection: selectedCollection,
+      );
+      final proxyState = navigatorKey.currentContext!
+          .read<KyberProxyCubit>()
+          .state;
+      final plan = await ServerJoinPlanService().build(
+        server: server,
+        proxies: proxyState.proxies.map((proxy) => proxy.proxy),
+        preferredProxyId: Preferences.general.proxy,
+        spectator: spectator,
+        password: password,
       );
 
-      if (!sl.isRegistered<MaximaGameInstance>()) {
-        await showKyberDialog(
-          context: navigatorKey.currentContext!,
-          builder: (_) => MaximaStartGameDialog(
-            mods: tmpCollection.getLocalMods().whereType<FrostyMod>().toList(),
-            initializeRequest: InitializeRequest(
-              joinServer: joinRequest,
-              modData: tmpCollection.getInterfaceData(),
-            ),
-          ),
-        );
-      } else {
-        final instance = sl.get<MaximaGameInstance>();
-        await instance.clientService.client.joinServer(
-          joinRequest,
+      final proxyFallback = plan.proxyFallback;
+      if (proxyFallback != null) {
+        NotificationService.showNotification(
+          message:
+              'Selected Proxy not available, using '
+              '${proxyFallback.selectedProxyName} instead',
+          severity: InfoBarSeverity.warning,
         );
       }
+
+      await ServerJoinDispatchService().dispatch(
+        plan: plan,
+        collection: tmpCollection,
+      );
     } on GrpcError catch (e) {
-      _logger.severe('Failed to join server: ${e.message}', e);
+      _logger.severe('LAN_STAGE[join.error.grpc] message=${e.message}', e);
       NotificationService.error(
         message: 'Failed to join server: ${e.message}',
       );
-    } catch (e) {
-      _logger.severe('Failed to join server: $e', e);
+    } on Object catch (e) {
+      _logger.severe('LAN_STAGE[join.error] error=$e', e);
       NotificationService.error(
         message: 'Failed to join server: $e',
       );

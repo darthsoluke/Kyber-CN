@@ -1,23 +1,12 @@
-use dashmap::{DashMap, DashSet};
-use futures_util::stream::SplitSink;
-use rand::Rng;
-use tokio::sync::mpsc::{Sender, UnboundedSender};
-use std::sync::Arc;
-use std::time::Instant;
+use dashmap::DashMap;
 use log::warn;
-use tokio::net::TcpStream;
+use std::sync::Arc;
+use std::sync::Mutex;
+use tokio::sync::mpsc::UnboundedSender;
 use tokio_tungstenite::tungstenite::Message;
-use tokio_tungstenite::WebSocketStream;
-
-#[derive(Clone)]
-pub enum UserType {
-    Client(u16, String),
-    Server(String),
-}
 
 #[derive(Clone)]
 pub struct User {
-    pub user_type: UserType,
     pub sender: UnboundedSender<Message>,
     pub cancel_token: UnboundedSender<()>,
 }
@@ -26,6 +15,8 @@ pub struct User {
 pub struct UserManager {
     users: Arc<DashMap<u16, User>>,
     servers: Arc<DashMap<String, User>>,
+    user_tokens: Arc<DashMap<String, u16>>,
+    next_user_id: Arc<Mutex<u16>>,
 }
 
 impl UserManager {
@@ -33,6 +24,8 @@ impl UserManager {
         UserManager {
             users: Arc::new(DashMap::new()),
             servers: Arc::new(DashMap::new()),
+            user_tokens: Arc::new(DashMap::new()),
+            next_user_id: Arc::new(Mutex::new(1)),
         }
     }
 
@@ -42,16 +35,13 @@ impl UserManager {
     }
 
     // Method to get user by identifier
-    pub fn get_server_by_id(
-        &self,
-        id: &str,
-    ) -> Option<User> {
+    pub fn get_server_by_id(&self, id: &str) -> Option<User> {
         self.servers.get(id).map(|x| x.clone())
     }
 
-    pub fn convert_token(&self, token: &str) -> u16 {
-        token.bytes()
-            .fold(0u16, |acc, byte| acc.wrapping_mul(31).wrapping_add(byte as u16))
+    pub fn get_user_by_token(&self, token: &str) -> Option<(u16, User)> {
+        let user_id = *self.user_tokens.get(token)?;
+        self.get_user_by_id(user_id).map(|user| (user_id, user))
     }
 
     // Method to add or update user
@@ -59,27 +49,40 @@ impl UserManager {
         &self,
         sender: UnboundedSender<Message>,
         cancel_token: UnboundedSender<()>,
-        server_id: &str,
+        _server_id: &str,
         token: String,
     ) -> u16 {
-        let user_id = self.convert_token(&token);
-        let user = User {
-            user_type: UserType::Client(user_id, server_id.to_string()),
-            sender,
-            cancel_token,
-        };
-
-        if self.users.contains_key(&user_id) {
-            warn!("User with ID {} already exists, overwriting", user_id);
-            self.users.remove(&user_id);
+        if let Some((existing_id, existing_user)) = self.get_user_by_token(&token) {
+            warn!(
+                "User token already connected as ID {}, overwriting",
+                existing_id
+            );
+            let _ = existing_user.cancel_token.send(());
+            self.remove_user(existing_id);
         }
 
-        self.users.insert(user_id, user);
+        let user_id = self.allocate_user_id();
+        self.users.insert(
+            user_id,
+            User {
+                sender,
+                cancel_token,
+            },
+        );
+        self.user_tokens.insert(token, user_id);
         user_id
     }
 
     pub fn remove_user(&self, id: u16) {
         self.users.remove(&id);
+        if let Some(token_entry) = self
+            .user_tokens
+            .iter()
+            .find(|entry| *entry.value() == id)
+            .map(|entry| entry.key().clone())
+        {
+            self.user_tokens.remove(&token_entry);
+        }
     }
 
     pub fn add_server(
@@ -89,15 +92,33 @@ impl UserManager {
         server_id: &str,
     ) {
         let user = User {
-            user_type: UserType::Server(server_id.to_string()),
             sender,
             cancel_token,
         };
-
         self.servers.insert(server_id.to_owned(), user);
     }
 
     pub fn remove_server(&self, id: &str) {
         self.servers.remove(id);
+    }
+
+    fn allocate_user_id(&self) -> u16 {
+        let mut next_user_id = self
+            .next_user_id
+            .lock()
+            .expect("user id allocator poisoned");
+        for _ in 0..u16::MAX {
+            let candidate = *next_user_id;
+            *next_user_id = next_user_id.wrapping_add(1);
+            if *next_user_id == 0 {
+                *next_user_id = 1;
+            }
+
+            if candidate != 0 && !self.users.contains_key(&candidate) {
+                return candidate;
+            }
+        }
+
+        panic!("proxy user id space exhausted");
     }
 }

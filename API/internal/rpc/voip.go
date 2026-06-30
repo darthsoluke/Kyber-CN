@@ -21,7 +21,10 @@ type VoipServer struct {
 }
 
 func NewVoipServer(store *db.Store) *VoipServer {
-	tokenGen := vivox.NewVivoxTokenGenerator()
+	tokenGen, err := vivox.NewVivoxTokenGeneratorFromEnv()
+	if err != nil {
+		logger.L().Warn("Vivox disabled", zap.Error(err))
+	}
 
 	return &VoipServer{
 		store:    store,
@@ -30,6 +33,10 @@ func NewVoipServer(store *db.Store) *VoipServer {
 }
 
 func (s *VoipServer) Login(ctx context.Context, req *pbcommon.Empty) (*pbapi.VoipLoginResponse, error) {
+	if s.tokenGen == nil {
+		return nil, status.Error(codes.Unavailable, "Vivox is not configured")
+	}
+
 	user := ctx.Value("user").(*models.UserModel)
 
 	username := s.tokenGen.Username(user.Name)
@@ -44,6 +51,10 @@ func (s *VoipServer) Login(ctx context.Context, req *pbcommon.Empty) (*pbapi.Voi
 }
 
 func (s *VoipServer) JoinChannel(ctx context.Context, req *pbapi.VoipJoinChannelRequest) (*pbapi.VoipJoinChannelResponse, error) {
+	if s.tokenGen == nil {
+		return nil, status.Error(codes.Unavailable, "Vivox is not configured")
+	}
+
 	user := ctx.Value("user").(*models.UserModel)
 
 	server, err := s.store.Servers.GetByID(ctx, req.GetServer())

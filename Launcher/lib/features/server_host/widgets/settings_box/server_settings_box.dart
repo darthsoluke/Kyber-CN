@@ -6,11 +6,11 @@ import 'package:kyber_launcher/core/config/colors.dart';
 import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/background_image.dart';
-import 'package:kyber_launcher/features/server_host/widgets/settings_box/settings_box_header.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/ingame_sub_pages/ingame_actions.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/ingame_sub_pages/ingame_players.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/ingame_sub_pages/ingame_settings.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/settings/server_settings.dart';
+import 'package:kyber_launcher/features/server_host/widgets/settings_box/settings_box_header.dart';
 import 'package:kyber_launcher/features/server_moderation/providers/moderation_cubit.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
@@ -19,7 +19,9 @@ import 'package:super_sliver_list/super_sliver_list.dart';
 final hostingForm = GlobalKey<FormBuilderState>();
 
 class ServerSettingsBox extends StatefulWidget {
-  const ServerSettingsBox({super.key});
+  const ServerSettingsBox({super.key, this.lanOnly = false});
+
+  final bool lanOnly;
 
   @override
   State<ServerSettingsBox> createState() => _ServerSettingsBoxState();
@@ -41,7 +43,7 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
         'serverPort': Preferences.hostServer.port.toString(),
         'maxPlayers': Preferences.hostServer.maxPlayers,
         'maxSpectators': Preferences.hostServer.maxSpectators,
-        'onlineMode': Preferences.hostServer.onlineMode,
+        'onlineMode': !widget.lanOnly && Preferences.hostServer.onlineMode,
       },
       onChanged: () async {
         final state = context.read<ModerationCubit>().state;
@@ -68,20 +70,23 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
               (hostingForm.currentState?.fields['maxSpectators']?.value ?? 0)
                   as int;
           Preferences.hostServer.onlineMode =
-              (hostingForm.currentState?.fields['onlineMode']?.value ?? true)
-                  as bool;
+              !widget.lanOnly &&
+              ((hostingForm.currentState?.fields['onlineMode']?.value ?? true)
+                  as bool);
         }
       },
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
           SizedBox(
-            height: 180,
+            height: widget.lanOnly ? 220 : 180,
             child: Panel(
               background: const HostingBackgroundImage(),
               child: SettingsBoxHeader(
+                lanOnly: widget.lanOnly,
                 selectedPage: selectedPage,
                 onPageChanged: (page) => setState(() => selectedPage = page),
+                onServerStarted: () => setState(() => selectedPage = 0),
               ),
             ),
           ),
@@ -99,7 +104,7 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
                           borderRadius: const BorderRadius.vertical(
                             bottom: Radius.circular(kDefaultOuterBorderRadius),
                           ),
-                          color: Colors.black.withOpacity(.3),
+                          color: Colors.black.withValues(alpha: .3),
                           border: const Border(
                             left: kDefaultBorder,
                             right: kDefaultBorder,
@@ -195,7 +200,7 @@ class _ServerSettingsBoxState extends State<ServerSettingsBox> {
                                 );
                               }
 
-                              return const ServerSettings();
+                              return ServerSettings(lanOnly: widget.lanOnly);
                             },
                           ),
                     ),

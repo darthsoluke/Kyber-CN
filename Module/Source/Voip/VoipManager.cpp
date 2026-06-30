@@ -167,6 +167,12 @@ void VoipManager::Init()
 
 void VoipManager::RequestLogin()
 {
+    if (g_program != nullptr && g_program->m_server != nullptr && !g_program->m_server->m_onlineMode)
+    {
+        KYBER_LOG(Info, "LAN_STAGE[voip.login.skip] reason=offline_direct");
+        return;
+    }
+
     KYBER_LOG(Info, "[VoIP] Requesting vivox login...");
     g_program->GetAPI()->GetVoip()->Login([&](std::optional<const VoipLoginResponse*> response) {
         if (!response)

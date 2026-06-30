@@ -5,6 +5,7 @@ import (
 	"crypto/sha256"
 	"encoding/base64"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"os"
 	"sync"
@@ -29,25 +30,33 @@ type VivoxTokenGenerator struct {
 }
 
 func NewVivoxTokenGenerator() *VivoxTokenGenerator {
+	generator, err := NewVivoxTokenGeneratorFromEnv()
+	if err != nil {
+		panic(err)
+	}
+	return generator
+}
+
+func NewVivoxTokenGeneratorFromEnv() (*VivoxTokenGenerator, error) {
 	key := os.Getenv("VIVOX_KEY")
 	if key == "" {
-		panic("Please set VIVOX_KEY environment variable")
+		return nil, errors.New("VIVOX_KEY environment variable is not set")
 	}
 	issuer := os.Getenv("VIVOX_ISSUER")
 	if issuer == "" {
-		panic("Please set VIVOX_ISSUER environment variable")
+		return nil, errors.New("VIVOX_ISSUER environment variable is not set")
 	}
 
 	domain := os.Getenv("VIVOX_DOMAIN")
 	if domain == "" {
-		panic("Please set VIVOX_DOMAIN environment variable")
+		return nil, errors.New("VIVOX_DOMAIN environment variable is not set")
 	}
 
 	return &VivoxTokenGenerator{
 		Key:    key,
 		Issuer: issuer,
 		Domain: domain,
-	}
+	}, nil
 }
 
 func (g *VivoxTokenGenerator) Generate(action, from string, to *string) string {

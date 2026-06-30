@@ -8,6 +8,14 @@ namespace Kyber
 {
 class Server;
 
+namespace LanDiscoveryProtocol
+{
+constexpr uint16_t DiscoveryPort = 25249;
+constexpr uint16_t DefaultServerPort = 25200;
+constexpr const char* DiscoveryRequest = "KYBER_LAN_DISCOVERY_V1";
+constexpr const char* DiscoveryProtocol = "kyber_lan_v1";
+} // namespace LanDiscoveryProtocol
+
 class LanDiscoveryService
 {
 public:

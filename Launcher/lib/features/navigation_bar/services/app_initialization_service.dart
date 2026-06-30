@@ -45,6 +45,16 @@ class AppInitializationService {
     sl.get<RichPresence>().start();
   }
 
+  static Future<void> initializeDedicated(BuildContext context) async {
+    if (!context.mounted) return;
+
+    context.read<KyberStatusCubit>();
+    sl.get<RichPresence>().start();
+  }
+
+  static Future<void> initializeLan(BuildContext context) =>
+      initializeDedicated(context);
+
   static Future<void> startServices(BuildContext context) async {
     await StorageHelper.saveCurrentVersion();
 
@@ -52,16 +62,7 @@ class AppInitializationService {
 
     context.read<ModerationServersCubit>();
 
-    unawaited(
-      sl.isReady<ModService>().then((_) {
-        if (!context.mounted) return;
-
-        NotificationService.showNotification(
-          context: context,
-          message: '${sl.get<ModService>().mods.length} mods loaded',
-        );
-      }),
-    );
+    _showModLoadNotification(context);
 
     if (context.mounted) {
       context.read<MaximaRtmCubit>().startPresenceStream();
@@ -81,6 +82,38 @@ class AppInitializationService {
     await _handleVersionUpdate();
 
     TaskbarIconHelper.setWindowIcon();
+  }
+
+  static Future<void> startDedicatedServices(BuildContext context) async {
+    await StorageHelper.saveCurrentVersion();
+
+    if (!context.mounted) return;
+
+    _showModLoadNotification(context);
+
+    await ProtocolHelper.initialize();
+    await _checkCompatibilityMode(context);
+    await _showPlatformWarnings();
+    await _validateModDirectory(context);
+    await _handleVersionUpdate();
+
+    TaskbarIconHelper.setWindowIcon();
+  }
+
+  static Future<void> startLanServices(BuildContext context) =>
+      startDedicatedServices(context);
+
+  static void _showModLoadNotification(BuildContext context) {
+    unawaited(
+      sl.isReady<ModService>().then((_) {
+        if (!context.mounted) return;
+
+        NotificationService.showNotification(
+          context: context,
+          message: '${sl.get<ModService>().mods.length} mods loaded',
+        );
+      }),
+    );
   }
 
   static Future<void> _checkCompatibilityMode(BuildContext context) async {
@@ -120,7 +153,8 @@ class AppInitializationService {
       NotificationService.error(
         title: 'Visual C++ Runtime not installed',
         message:
-            'Please install the Visual C++ Redistributable for Visual Studio 2015, 2017 and 2019',
+            'Please install the Visual C++ Redistributable for Visual Studio '
+            '2015, 2017 and 2019',
       );
     }
   }

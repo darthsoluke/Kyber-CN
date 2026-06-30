@@ -1,0 +1,62 @@
+services:
+  mongo:
+    image: mongo:7
+    restart: unless-stopped
+    volumes:
+      - mongo-data:/data/db
+    ports:
+      - "27017:27017"
+
+  rabbitmq:
+    image: rabbitmq:3-management
+    restart: unless-stopped
+    ports:
+      - "5672:5672"
+      - "15672:15672"
+
+  api:
+    build:
+      context: ./API
+      additional_contexts:
+        base: .
+    image: kyber-api:selfhost
+    restart: unless-stopped
+    depends_on:
+      - mongo
+      - rabbitmq
+    environment:
+      GRPC_PORT: "9027"
+      HTTP_PORT: "9028"
+      MONGO_URI: mongodb://mongo:27017/kyber
+      AMQP_URL: amqp://guest:guest@rabbitmq:5672/
+      EA_JWKS_ENDPOINT: ${EA_JWKS_ENDPOINT:?set EA_JWKS_ENDPOINT}
+      WHITELIST_ENABLED: "false"
+      KYBER_CONFIG_DIR: /config
+      JWT_KEY_DIR: /jwt
+      DOCKER_KEY_DIR: /docker-auth
+    volumes:
+      - ./API/config:/config:ro
+      - ./API/jwt:/jwt:ro
+      - ./API/docker-auth:/docker-auth:ro
+    ports:
+      - "9027:9027"
+      - "9028:9028"
+
+  proxy:
+    build:
+      context: ./Proxy
+      additional_contexts:
+        base: .
+    image: kyber-proxy:selfhost
+    restart: unless-stopped
+    depends_on:
+      - api
+    environment:
+      SERVER_IP: 0.0.0.0
+      SERVER_PORT: "8080"
+      JWKS_URL: http://api:9028/.well-known/jwks.json
+    ports:
+      - "8080:8080"
+
+volumes:
+  mongo-data:

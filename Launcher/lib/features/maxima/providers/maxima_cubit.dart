@@ -31,12 +31,12 @@ import 'package:window_to_front/window_to_front.dart';
 part '../models/maxima_state.dart';
 
 class MaximaCubit extends Cubit<MaximaState> {
+  MaximaCubit() : super(MaximaState.initial()) {
+    unawaited(init());
+  }
+
   static const _maximaArtifactUrl =
       'https://s3.kyber.gg/artifacts/maxima-win64.zip';
-
-  MaximaCubit() : super(MaximaState.initial()) {
-    init();
-  }
 
   final logger = Logger('maxima_cubit');
 
@@ -81,7 +81,7 @@ class MaximaCubit extends Cubit<MaximaState> {
         await Future<void>.delayed(const Duration(seconds: 2));
         return verifyToken(tries + 1);
       }
-    } catch (e, s) {
+    } on Object catch (e, s) {
       logger.severe('Unknown error verifying token:', e, s);
       await Future<void>.delayed(const Duration(seconds: 2));
       return verifyToken(tries + 1);
@@ -128,6 +128,17 @@ class MaximaCubit extends Cubit<MaximaState> {
     } catch (e, s) {
       logger.severe('Error starting maxima:', e, s);
       if (e is AnyhowException &&
+          e.message.contains('MaximaBackgroundServiceUnavailable')) {
+        emit(
+          const MaximaState(
+            status: MaximaStatus.error,
+            error: 'MaximaBackgroundServiceUnavailable',
+          ),
+        );
+        rethrow;
+      }
+
+      if (e is AnyhowException &&
           (e.message.contains('(os error 5)') ||
               s.toString().contains('(os error 5)'))) {
         emit(
@@ -142,8 +153,9 @@ class MaximaCubit extends Cubit<MaximaState> {
       emit(MaximaState(status: MaximaStatus.error, error: e.toString()));
       rethrow;
     } finally {
+      final elapsedMs = DateTime.now().difference(now).inMilliseconds;
       logger.info(
-        'Maxima initialized. (Took ${DateTime.now().difference(now).inMilliseconds}ms)',
+        'Maxima initialized. (Took ${elapsedMs}ms)',
       );
     }
 
@@ -195,7 +207,7 @@ class MaximaCubit extends Cubit<MaximaState> {
         dirname(Platform.resolvedExecutable),
       );
       await init();
-    } catch (e) {
+    } on Object catch (e) {
       logger.severe('Error downloading maxima:', e);
       emit(
         MaximaState(
@@ -355,7 +367,7 @@ class MaximaCubit extends Cubit<MaximaState> {
       );
 
       return;
-    } catch (e, s) {
+    } on Object catch (e, s) {
       _updateTimer?.cancel();
       Logger('maxima').severe('Error logging in:', e, s);
       if (e is AnyhowException) {
@@ -484,7 +496,7 @@ class MaximaCubit extends Cubit<MaximaState> {
 
     try {
       await _downloadAndExtractMaximaFiles(currentDir);
-    } catch (e, s) {
+    } on Object catch (e, s) {
       logger.warning('Failed to recover Maxima files automatically', e, s);
     }
 

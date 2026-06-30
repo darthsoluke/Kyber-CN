@@ -32,6 +32,10 @@ func (c *StatsCache) key(userID string, source models.StatsSource) string {
 }
 
 func (c *StatsCache) Get(ctx context.Context, userID string, source models.StatsSource) (*models.UserStatsModel, error) {
+	if c == nil || c.rdb == nil {
+		return nil, nil
+	}
+
 	key := c.key(userID, source)
 	data, err := c.rdb.Get(ctx, key).Bytes()
 
@@ -54,6 +58,10 @@ func (c *StatsCache) Get(ctx context.Context, userID string, source models.Stats
 }
 
 func (c *StatsCache) Set(ctx context.Context, m *models.UserStatsModel) error {
+	if c == nil || c.rdb == nil {
+		return nil
+	}
+
 	key := c.key(m.UserID, m.Source)
 	data, err := json.Marshal(m)
 	if err != nil {
@@ -69,6 +77,10 @@ func (c *StatsCache) Set(ctx context.Context, m *models.UserStatsModel) error {
 }
 
 func (c *StatsCache) Delete(ctx context.Context, userID string, source models.StatsSource) error {
+	if c == nil || c.rdb == nil {
+		return nil
+	}
+
 	key := c.key(userID, source)
 	if err := c.rdb.Del(ctx, key).Err(); err != nil {
 		logger.L().Error("redis DEL error", zap.Error(err))

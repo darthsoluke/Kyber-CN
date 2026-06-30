@@ -232,6 +232,10 @@ void Sentry::Initialize()
     KYBER_LOG(Info, "Sentry disabled in debug builds");
     return;
 #endif
+    if (std::getenv("KYBER_DISABLE_SENTRY") != nullptr)
+    {
+        return;
+    }
 
     sentry_options_t* options = sentry_options_new();
     sentry_options_set_dsn(options, "https://3be50e0a7bc8258a06f413c6fdef0521@sentry.kyber.gg/2");

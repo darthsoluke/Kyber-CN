@@ -17,7 +17,7 @@ const _kMaxConcurrentHosts = 2;
 
 class KyberProxyCubit extends Cubit<KyberProxyState> {
   KyberProxyCubit() : super(KyberProxyState(proxies: [])) {
-    loadProxies();
+    unawaited(loadProxies());
   }
 
   final _logger = Logger('proxy_cubit');
@@ -92,17 +92,18 @@ class KyberProxyCubit extends Cubit<KyberProxyState> {
         Preferences.general.proxy = 'auto';
         emit(state.copyWith(selectedProxy: 'auto'));
       }
-    } catch (e, s) {
+    } on Object catch (e, s) {
       _logger.severe('Failed to load proxies', e, s);
     }
   }
 
   Future<int?> _measurePing(String host) async {
     IOWebSocketChannel? channel;
-    StreamQueue? queue;
+    StreamQueue<dynamic>? queue;
 
     try {
-      channel = IOWebSocketChannel.connect(Uri.parse('wss://$host/ping'));
+      final scheme = _webSocketScheme();
+      channel = IOWebSocketChannel.connect(Uri.parse('$scheme://$host/ping'));
       await channel.ready.timeout(_kConnectTimeout);
 
       queue = StreamQueue(channel.stream.asBroadcastStream());
@@ -128,7 +129,7 @@ class KyberProxyCubit extends Cubit<KyberProxyState> {
       samples.sort();
 
       return samples[samples.length >> 1];
-    } catch (e) {
+    } on Object catch (e) {
       _logger.warning('Ping failed for $host: $e');
       return null;
     } finally {
@@ -150,6 +151,10 @@ class KyberProxyCubit extends Cubit<KyberProxyState> {
     }
 
     return current;
+  }
+
+  String _webSocketScheme() {
+    return sl.get<KyberGRPCService>().webSocketScheme;
   }
 }
 

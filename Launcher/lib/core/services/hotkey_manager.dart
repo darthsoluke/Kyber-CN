@@ -4,7 +4,7 @@ import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/server_moderation/providers/moderation_cubit.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
@@ -52,11 +52,13 @@ class HotKeyService {
         .get<KyberGRPCService>()
         .serverManagementClient
         .moderatedServers(Empty());
-    final state = await sl
-        .get<MaximaGameInstance>()
-        .clientService
-        .commonClient
-        .getInfo(Empty());
+    final instance = sl.get<MaximaInstanceService>().primaryInstance;
+    if (instance == null) {
+      _logger.warning('No running game instance found, ignoring hotkey');
+      return;
+    }
+
+    final state = await instance.clientService.commonClient.getInfo(Empty());
 
     late String id;
     if (state.hasClient()) {

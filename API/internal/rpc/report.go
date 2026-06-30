@@ -44,9 +44,24 @@ func NewReportServer(store *db.Store, sm *ws.ServerManager, client mq.Client) *R
 	minioEndpoint := os.Getenv("R2_HOST")
 	accessKey := os.Getenv("R2_ACCESS_KEY")
 	secretKey := os.Getenv("R2_SECRET_KEY")
+	bucketName := os.Getenv("R2_BUCKET_NAME")
 
-	if minioEndpoint == "" || accessKey == "" || secretKey == "" {
-		panic("R2_HOST, R2_ACCESS_KEY, and R2_SECRET_KEY must be set")
+	if minioEndpoint == "" && accessKey == "" && secretKey == "" && bucketName == "" {
+		logger.L().Warn("Report evidence storage disabled; set R2_HOST, R2_ACCESS_KEY, R2_SECRET_KEY, and R2_BUCKET_NAME to enable it")
+		return &ReportServiceServer{
+			store:    store,
+			sm:       sm,
+			mqClient: client,
+		}
+	}
+
+	if minioEndpoint == "" || accessKey == "" || secretKey == "" || bucketName == "" {
+		logger.L().Warn("Report evidence storage disabled due to incomplete R2 configuration")
+		return &ReportServiceServer{
+			store:    store,
+			sm:       sm,
+			mqClient: client,
+		}
 	}
 
 	minioClient, err := minio.New(minioEndpoint, &minio.Options{
@@ -54,13 +69,13 @@ func NewReportServer(store *db.Store, sm *ws.ServerManager, client mq.Client) *R
 		Secure: true,
 	})
 
-	bucketName := os.Getenv("R2_BUCKET_NAME")
-	if bucketName == "" {
-		panic("R2_BUCKET_NAME must be set")
-	}
-
 	if err != nil {
-		panic("Failed to create MinIO client: " + err.Error())
+		logger.L().Warn("Report evidence storage disabled due to R2 client initialization error", zap.Error(err))
+		return &ReportServiceServer{
+			store:    store,
+			sm:       sm,
+			mqClient: client,
+		}
 	}
 
 	return &ReportServiceServer{
@@ -136,6 +151,10 @@ func (s *ReportServiceServer) GetUserInfo(ctx context.Context, req *pbapi.UserIn
 }
 
 func (s *ReportServiceServer) GenerateEvidenceLinks(ctx context.Context, req *pbapi.GenerateEvidenceLinksRequest) (*pbapi.GenerateEvidenceLinksResponse, error) {
+	if s.minio == nil || s.bucketName == "" {
+		return nil, status.Error(codes.Unavailable, "report evidence storage is not configured")
+	}
+
 	links := make([]string, 0)
 	for ext, count := range req.FileExtensions {
 		if !allowedExt[ext] {

@@ -9,6 +9,7 @@ import 'package:kyber/kyber.dart';
 import 'package:kyber_cli/commands/download_game.dart';
 import 'package:kyber_cli/commands/get_ea_token.dart';
 import 'package:kyber_cli/commands/get_token.dart';
+import 'package:kyber_cli/commands/provision_license_command.dart';
 import 'package:kyber_cli/commands/start_game.dart';
 import 'package:kyber_cli/commands/start_server_command.dart';
 import 'package:kyber_cli/gen/api/archive.dart';
@@ -25,11 +26,6 @@ const packageName = 'kyber_cli';
 const description = 'A CLI for Kyber.';
 
 class KyberCliCommandRunner extends CompletionCommandRunner<int> {
-  String customInfoStyle(String level, String? message) {
-    final x = '[$level] - $message';
-    return "[${DateTime.now().toString().split('.').first}] $x";
-  }
-
   KyberCliCommandRunner({Logger? logger}) : super(executableName, description) {
     _logger =
         logger ??
@@ -62,7 +58,13 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
     addCommand(StartGameCommand(logger: _logger));
     addCommand(GetTokenCommand(logger: _logger));
     addCommand(GetEATokenCommand(logger: _logger));
+    addCommand(ProvisionLicenseCommand(logger: _logger));
     addCommand(SetupServerCommand(logger: _logger));
+  }
+
+  String customInfoStyle(String level, String? message) {
+    final x = '[$level] - $message';
+    return "[${DateTime.now().toString().split('.').first}] $x";
   }
 
   @override
@@ -112,12 +114,12 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
       Env.set('KYBER_ENVIRONMENT', apiEnv);
       sl.registerSingleton(KyberGRPCService.fromEnv(apiEnv));
 
-      if (topLevelResults.command != null &&
-          !topLevelResults.arguments.contains('--help')) {
+      if (_requiresMaxima(topLevelResults)) {
         final commandName = topLevelResults.command!.name;
         final moduleDirOverride = switch (commandName) {
-          'start_server' ||
-          'start_game' => topLevelResults.command!['module-path'] as String?,
+          'start_server' || 'start_game' =>
+            (topLevelResults.command!['module-path'] as String?) ??
+                Platform.environment['KYBER_MODULE_DIR'],
           _ => null,
         };
 
@@ -215,6 +217,31 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
     }
   }
 
+  bool _requiresMaxima(ArgResults topLevelResults) {
+    if (topLevelResults['version'] == true) {
+      return false;
+    }
+
+    final commandName = topLevelResults.command?.name;
+    if (commandName == null ||
+        commandName == 'help' ||
+        commandName == 'completion') {
+      return false;
+    }
+
+    if (topLevelResults.arguments.contains('--help') ||
+        topLevelResults.arguments.contains('-h')) {
+      return false;
+    }
+
+    return const {
+      'download_game',
+      'get_ea_token',
+      'get_token',
+      'start_game',
+    }.contains(commandName);
+  }
+
   @override
   Future<int?> runCommand(ArgResults topLevelResults) async {
     if (topLevelResults.command?.name == 'completion') {
@@ -227,7 +254,8 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
       ..detail('  Top level options:');
     for (final option in topLevelResults.options) {
       if (topLevelResults.wasParsed(option)) {
-        _logger.detail('  - $option: ${topLevelResults[option]}');
+        final value = _formatLoggedOption(option, topLevelResults[option]);
+        _logger.detail('  - $option: $value');
       }
     }
     if (topLevelResults.command != null) {
@@ -237,19 +265,43 @@ class KyberCliCommandRunner extends CompletionCommandRunner<int> {
         ..detail('    Command options:');
       for (final option in commandResult.options) {
         if (commandResult.wasParsed(option)) {
-          _logger.detail('    - $option: ${commandResult[option]}');
+          final value = _formatLoggedOption(option, commandResult[option]);
+          _logger.detail('    - $option: $value');
         }
       }
     }
 
     final int? exitCode;
     if (topLevelResults['version'] == true) {
-      print(version);
+      stdout.writeln(version);
       exitCode = ExitCode.success.code;
     } else {
       exitCode = await super.runCommand(topLevelResults);
     }
 
     return exitCode;
+  }
+
+  String _formatLoggedOption(String name, Object? value) {
+    final normalizedName = name.toLowerCase();
+    final sensitive =
+        normalizedName.contains('credential') ||
+        normalizedName.contains('password') ||
+        normalizedName.contains('secret') ||
+        normalizedName.contains('token');
+
+    if (!sensitive) {
+      return value.toString();
+    }
+
+    if (value == null) {
+      return '<redacted:null>';
+    }
+
+    if (value is String && value.isEmpty) {
+      return '<redacted:empty>';
+    }
+
+    return '<redacted>';
   }
 }

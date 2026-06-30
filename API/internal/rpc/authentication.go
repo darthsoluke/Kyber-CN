@@ -96,7 +96,11 @@ func NewAuthenticationServer(ctx context.Context, store *db.Store, mqClient mq.C
 
 	wl := &whitelist{}
 	if err := util.LoadConfig("whitelist.yaml", wl); err != nil {
-		panic(fmt.Sprintf("failed to load whitelist config: %v", err))
+		if os.IsNotExist(err) {
+			logger.L().Warn("Whitelist config missing; using an empty whitelist", zap.Error(err))
+		} else {
+			panic(fmt.Sprintf("failed to load whitelist config: %v", err))
+		}
 	}
 
 	var usersClient *pbea.UsersClient
@@ -384,17 +388,11 @@ func (s *AuthenticationServer) ResetToken(ctx context.Context, _ *pbcommon.Empty
 }
 
 func (s *AuthenticationServer) Login(ctx context.Context, req *pbapi.LoginRequest) (*pbapi.LoginResponse, error) {
-	meta, exist := metadata.FromIncomingContext(ctx)
-	if !exist {
-		return nil, status.Error(codes.Unauthenticated, "Missing metadata")
+	meta, _ := metadata.FromIncomingContext(ctx)
+	userIP, err := requesterIP(ctx, meta)
+	if err != nil {
+		return nil, err
 	}
-
-	addr := meta.Get("cf-connecting-ip")
-	if len(addr) == 0 {
-		return nil, status.Error(codes.Internal, "Invalid Request")
-	}
-
-	userIP := addr[0]
 
 	claims, err := ea2.ValidateToken(s.eaJwks, req.GetToken())
 	if err != nil {

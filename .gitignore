@@ -1,6 +1,7 @@
 Packages/kyber/lib/gen
 CLI/lib/src/version.dart
 artifacts/module/
+.toolchains/
 
 pubspec.lock
 pubspec_overrides.yaml

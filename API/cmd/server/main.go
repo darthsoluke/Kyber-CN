@@ -22,6 +22,7 @@ import (
 	grpc_recovery "github.com/grpc-ecosystem/go-grpc-middleware/recovery"
 	"github.com/minio/minio-go/v7"
 	"github.com/minio/minio-go/v7/pkg/credentials"
+	"github.com/redis/go-redis/v9"
 
 	"github.com/ArmchairDevelopers/Kyber/API/internal/rpc"
 	"github.com/gorilla/mux"
@@ -68,7 +69,7 @@ func main() {
 
 	store, err := db.NewStore(ctx, mongoURI)
 	if err != nil {
-		logger.L().Error("db.NewStore failed", zap.Error(err))
+		logger.L().Fatal("db.NewStore failed", zap.Error(err))
 	}
 
 	defer func() {
@@ -79,40 +80,35 @@ func main() {
 		}
 	}()
 
-	minioEndpoint := os.Getenv("MINIO_HOST")
-	accessKey := os.Getenv("MINIO_ACCESS_KEY")
-	secretKey := os.Getenv("MINIO_SECRET_KEY")
-
-	if minioEndpoint == "" || accessKey == "" || secretKey == "" {
-		panic("MINIO_HOST, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY must be set")
-	}
-
-	minioClient, err := minio.New(minioEndpoint, &minio.Options{
-		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
-		Secure: true,
-	})
-
+	minioClient, err := newOptionalMinioClient()
 	if err != nil {
-		panic("Failed to create MinIO client: " + err.Error())
+		logger.L().Fatal("failed to initialize MinIO", zap.Error(err))
 	}
 
 	redisURL := os.Getenv("REDIS_URI")
-	if redisURL == "" {
-		panic("REDIS_URI environment variable is not set")
+	var redisClient *redis.Client
+	if redisURL != "" {
+		redisClient, err = cache.NewRedisClient(redisURL)
+		if err != nil {
+			logger.L().Fatal("failed to initialize Redis", zap.Error(err))
+		}
+		defer redisClient.Close()
+	} else {
+		logger.L().Warn("Redis disabled; set REDIS_URI to enable cached stats, patrons, and Discord OAuth state")
 	}
-
-	redisClient, err := cache.NewRedisClient(redisURL)
-	if err != nil {
-		panic("Failed to create Redis client: " + err.Error())
-	}
-	defer redisClient.Close()
 
 	statsCache := cache.NewStatsCache(redisClient, 10*time.Minute)
 	patronsCache := cache.NewPatronsCache(redisClient, time.Hour)
 	discordCache := cache.NewDiscordAuthCache(redisClient, 5*time.Minute)
 
 	sm := ws.NewServerManager(ctx, amqpURL, store)
-	dockerAuth := api.NewDockerAuthState(store)
+	dockerAuth, err := api.NewDockerAuthState(store)
+	if err != nil {
+		logger.L().Fatal("failed to initialize Docker auth", zap.Error(err))
+	}
+	if dockerAuth == nil {
+		logger.L().Warn("Docker auth disabled; set DOCKER_CRT_PATH and DOCKER_KEY_PATH to enable it")
+	}
 	discordAuth := api.NewDiscordAuthState(store, discordCache)
 
 	jwtService, err := jwts.NewService()
@@ -131,7 +127,9 @@ func main() {
 	imageManager := api.NewImageManager(store)
 	httpHandler := sentryHandler.Handle(httpRouter)
 
-	httpRouter.HandleFunc("/docker/auth", dockerAuth.AuthHandler).Methods(http.MethodGet)
+	if dockerAuth != nil {
+		httpRouter.HandleFunc("/docker/auth", dockerAuth.AuthHandler).Methods(http.MethodGet)
+	}
 	httpRouter.HandleFunc("/discord/auth", discordAuth.AuthHandler).Methods(http.MethodGet)
 	httpRouter.HandleFunc("/discord/callback", discordAuth.CallbackHandler).Methods(http.MethodGet)
 	httpRouter.HandleFunc("/.well-known/jwks.json", api.JWKSHandler(jwtService)).Methods(http.MethodGet)
@@ -241,4 +239,24 @@ func wrapWS(wsHandler func(http.ResponseWriter, *http.Request)) http.HandlerFunc
 
 		wsHandler(w, r)
 	}
+}
+
+func newOptionalMinioClient() (*minio.Client, error) {
+	minioEndpoint := os.Getenv("MINIO_HOST")
+	accessKey := os.Getenv("MINIO_ACCESS_KEY")
+	secretKey := os.Getenv("MINIO_SECRET_KEY")
+
+	if minioEndpoint == "" && accessKey == "" && secretKey == "" {
+		logger.L().Warn("MinIO disabled; set MINIO_HOST, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY to enable downloads and hosted mods")
+		return nil, nil
+	}
+
+	if minioEndpoint == "" || accessKey == "" || secretKey == "" {
+		return nil, fmt.Errorf("MINIO_HOST, MINIO_ACCESS_KEY, and MINIO_SECRET_KEY must be set together")
+	}
+
+	return minio.New(minioEndpoint, &minio.Options{
+		Creds:  credentials.NewStaticV4(accessKey, secretKey, ""),
+		Secure: true,
+	})
 }

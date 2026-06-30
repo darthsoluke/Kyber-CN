@@ -5,6 +5,39 @@
 - Clone the repository with `--recurse-submodules` or run `git submodule --init --recursive`
 - Download and install [Protoc](https://github.com/protocolbuffers/protobuf/releases) and ensure `protoc` is in your `PATH`
 
+## Local Workspace Toolchain
+
+On Windows, the repository can use a self-contained local toolchain rooted at
+`.toolchains/` instead of user-level SDK directories.
+
+Install or refresh the local toolchain:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\setup-local-toolchain.ps1
+```
+
+Activate it in a PowerShell session:
+
+```powershell
+. .\scripts\use-local-toolchain.ps1
+```
+
+Verify command resolution:
+
+```powershell
+powershell -ExecutionPolicy Bypass -File .\scripts\verify-local-toolchain.ps1
+```
+
+This local toolchain provides Flutter/Dart, Go, Rust nightly, Cargo tools,
+Protoc, CMake, Ninja, Bazelisk, Git, MSYS2, and libclang/clang-format under
+the workspace. MSVC itself is still imported from an existing Visual Studio
+installation because the Microsoft C++ toolchain is not practically portable;
+no new tools are installed to `C:` by these scripts.
+
+Use `kbazel` instead of `bazel` from PowerShell after activating the local
+toolchain. It forwards to Bazelisk and keeps Bazel output under
+`Module\.bazel_out`.
+
 ------
 
 ## Dart/Flutter Projects (Launcher, CLI, Packages)

@@ -6,7 +6,6 @@ import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/features/kyber/models/maps.dart';
 import 'package:kyber_launcher/features/kyber/models/mode.dart';
 import 'package:kyber_launcher/features/kyber/models/modes.dart';
-import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_list_state.dart';
 import 'package:kyber_launcher/features/server_browser/providers/lan_server_list_cubit.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/server_list/entry.dart';
@@ -41,7 +40,7 @@ class _LanTableServerListState extends State<LanTableServerList> {
                 if (servers.isEmpty) {
                   return Center(
                     child: Text(
-                      'No LAN servers found',
+                      'No direct servers found',
                       style: FluentTheme.of(context).typography.subtitle
                           ?.copyWith(fontFamily: FontFamily.battlefrontUI),
                     ),
@@ -57,7 +56,8 @@ class _LanTableServerListState extends State<LanTableServerList> {
                       }
 
                       final server = servers[index - 1] as Server;
-                      final mode = modes
+                      final mode =
+                          modes
                               .where(
                                 (element) =>
                                     element.mode == server.levelSetup.mode,
@@ -67,15 +67,16 @@ class _LanTableServerListState extends State<LanTableServerList> {
                       final map = mode.maps.isEmpty
                           ? maps.first
                           : maps.firstWhereOrNull(
-                                (element) =>
-                                    element['map'] == server.levelSetup.map,
-                              ) ??
-                              maps.first;
+                                  (element) =>
+                                      element['map'] == server.levelSetup.map,
+                                ) ??
+                                maps.first;
 
                       return ServerListEntry(
                         server: server,
                         index: index - 1,
                         isLast: index == servers.length,
+                        quickJoinDownloads: true,
                         hoveredIndex: hoverIndex ?? -1,
                         onHover: (value) {
                           setState(() => hoverIndex = value ? index : null);

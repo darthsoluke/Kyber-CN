@@ -5,6 +5,8 @@ import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/features/download_manager/screens/download_manager.dart';
 import 'package:kyber_launcher/features/frosty/screens/create_frosty_collection.dart';
 import 'package:kyber_launcher/features/kyber/widgets/debug_server_launcher.dart';
+import 'package:kyber_launcher/features/launcher_mode/providers/launcher_mode_cubit.dart';
+import 'package:kyber_launcher/features/launcher_mode/screens/launcher_mode_screen.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_cubit.dart';
 import 'package:kyber_launcher/features/mod_browser/providers/mod_search_cubit.dart';
@@ -73,6 +75,16 @@ int _getRouterIndex(Uri? uri) {
   }
 }
 
+bool _isLanRoute(String path) {
+  return path == '/home' ||
+      path == '/server_host' ||
+      path == '/ingame' ||
+      path == '/mods' ||
+      path.startsWith('/mods/') ||
+      path == '/downloads' ||
+      path.startsWith('/downloads/');
+}
+
 Page<void> buildCustomSubPage({
   required LocalKey pageKey,
   required Widget child,
@@ -84,34 +96,39 @@ Page<void> buildCustomSubPage({
     name: state.name,
     reverseTransitionDuration: const Duration(milliseconds: 150),
     transitionDuration: const Duration(milliseconds: 150),
-    transitionsBuilder: (_, animation, __, child) => FadeTransition(
-      opacity: Tween<double>(begin: 0, end: 1).animate(animation),
-      child: ScaleTransition(
-        scale: Tween<double>(begin: 0.98, end: 1).animate(animation),
-        child: Builder(
-          builder: (_) {
-            var show = true;
+    transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+        FadeTransition(
+          opacity: Tween<double>(begin: 0, end: 1).animate(animation),
+          child: ScaleTransition(
+            scale: Tween<double>(begin: 0.98, end: 1).animate(animation),
+            child: Builder(
+              builder: (_) {
+                var show = true;
 
-            if (state.matchedLocation !=
-                router.routerDelegate.currentConfiguration.last.matchedLocation
-                    .split('?')
-                    .first) {
-              show = false;
-            }
+                if (state.matchedLocation !=
+                    router
+                        .routerDelegate
+                        .currentConfiguration
+                        .last
+                        .matchedLocation
+                        .split('?')
+                        .first) {
+                  show = false;
+                }
 
-            return Opacity(
-              opacity: show ? 1 : 0,
-              child: Padding(
-                padding: const EdgeInsets.symmetric(
-                  horizontal: 20,
-                ).copyWith(bottom: 20),
-                child: child,
-              ),
-            );
-          },
+                return Opacity(
+                  opacity: show ? 1 : 0,
+                  child: Padding(
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 20,
+                    ).copyWith(bottom: 20),
+                    child: child,
+                  ),
+                );
+              },
+            ),
+          ),
         ),
-      ),
-    ),
   );
 }
 
@@ -186,8 +203,25 @@ Page<void> buildCustomPage({
 
 final router = GoRouter(
   navigatorKey: navigatorKey,
-  initialLocation: '/home',
+  initialLocation: '/mode',
   observers: [SentryNavigatorObserver()],
+  redirect: (context, state) {
+    final modeState = context.read<LauncherModeCubit>().state;
+    final path = state.uri.path;
+    if (!modeState.hasSelection) {
+      return path == '/mode' ? null : '/mode';
+    }
+
+    if (path == '/mode') {
+      return null;
+    }
+
+    if (modeState.isDedicatedOnly && !_isLanRoute(path)) {
+      return '/server_host?mode=dedicated';
+    }
+
+    return null;
+  },
   errorBuilder: (context, state) {
     return SafeArea(
       child: Center(
@@ -213,6 +247,22 @@ final router = GoRouter(
     );
   },
   routes: [
+    GoRoute(
+      path: '/mode',
+      name: 'mode',
+      pageBuilder: (context, state) => CustomTransitionPage(
+        key: state.pageKey,
+        name: state.name,
+        child: const LauncherModeScreen(),
+        transitionDuration: const Duration(milliseconds: 180),
+        reverseTransitionDuration: const Duration(milliseconds: 120),
+        transitionsBuilder: (context, animation, secondaryAnimation, child) =>
+            FadeTransition(
+              opacity: animation,
+              child: child,
+            ),
+      ),
+    ),
     ShellRoute(
       navigatorKey: shellNavigatorKey,
       builder: (context, state, child) {
@@ -279,7 +329,12 @@ final router = GoRouter(
           pageBuilder: (context, state) {
             return buildCustomPage(
               state: state,
-              child: const ServerBrowser(),
+              child: ServerBrowser(
+                lanOnly: context
+                    .read<LauncherModeCubit>()
+                    .state
+                    .isDedicatedOnly,
+              ),
             );
           },
           routes: [
@@ -301,6 +356,7 @@ final router = GoRouter(
           redirect: (context, state) async {
             // temp fix
             await sl.isReady<ModService>();
+            return null;
           },
           pageBuilder: (context, state) {
             return buildCustomPage(
@@ -311,6 +367,9 @@ final router = GoRouter(
                   BlocProvider(create: (_) => HostSearchCubit()),
                 ],
                 child: ServerHost(
+                  lanOnly:
+                      context.read<LauncherModeCubit>().state.isDedicatedOnly ||
+                      state.uri.queryParameters['mode'] == 'dedicated',
                   initialPage: state.uri.queryParameters['page'] != null
                       ? int.tryParse(state.uri.queryParameters['page']!)
                       : null,
@@ -367,7 +426,7 @@ final router = GoRouter(
           path: '/mods',
           name: 'mods',
           onExit: (context, state) {
-            //TODO: check for unsaved changes
+            // TODO(w1121): Check for unsaved changes before leaving.
             return true;
           },
           pageBuilder: (_, state) {

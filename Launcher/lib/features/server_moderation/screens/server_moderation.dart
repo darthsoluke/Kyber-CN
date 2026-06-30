@@ -1,3 +1,5 @@
+import 'dart:async';
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:flutter/services.dart';
@@ -18,6 +20,7 @@ import 'package:kyber_launcher/features/server_moderation/dialogs/moderation_inp
 import 'package:kyber_launcher/features/server_moderation/providers/moderation_cubit.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
 import 'package:kyber_launcher/gen/fonts.gen.dart';
+import 'package:kyber_launcher/injection_container.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
 import 'package:logging/logging.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
@@ -109,9 +112,11 @@ class _ServerModerationState extends State<ServerModeration> {
                                 KyberButton(
                                   text: l10n.text('common.spectate'),
                                   onPressed: () {
-                                    KyberServerHelper.joinServer(
-                                      state.server!,
-                                      spectator: true,
+                                    unawaited(
+                                      KyberServerHelper.joinServer(
+                                        state.server!,
+                                        spectator: true,
+                                      ),
                                     );
                                   },
                                 ),
@@ -126,17 +131,22 @@ class _ServerModerationState extends State<ServerModeration> {
                                 KyberButton(
                                   text: l10n.text('common.copy'),
                                   onPressed: () {
+                                    final service = sl.get<KyberGRPCService>();
+                                    final target =
+                                        'join_server?server_id='
+                                        '${state.server?.id}';
                                     final uri = Uri(
-                                      scheme: 'https',
-                                      host: 'api.prod.kyber.gg',
+                                      scheme: service.httpScheme,
+                                      host: service.httpHostname,
                                       path: 'redirect',
                                       queryParameters: {
-                                        'target':
-                                            'join_server?server_id=${state.server?.id}',
+                                        'target': target,
                                       },
                                     );
-                                    Clipboard.setData(
-                                      .new(text: uri.toString()),
+                                    unawaited(
+                                      Clipboard.setData(
+                                        ClipboardData(text: uri.toString()),
+                                      ),
                                     );
                                     NotificationService.info(
                                       message: l10n.text(
@@ -150,16 +160,20 @@ class _ServerModerationState extends State<ServerModeration> {
                           ),
                           const CardSection(),
                           Padding(
-                            padding: EdgeInsets.all(10),
+                            padding: const EdgeInsets.all(10),
                             child: Column(
                               spacing: 15,
                               children: [
                                 NormalButton(
-                                  label: Text(l10n.text('moderation.exportBans')),
+                                  label: Text(
+                                    l10n.text('moderation.exportBans'),
+                                  ),
                                   onPressed: NotificationService.notImplemented,
                                 ),
                                 NormalButton(
-                                  label: Text(l10n.text('moderation.importBans')),
+                                  label: Text(
+                                    l10n.text('moderation.importBans'),
+                                  ),
                                   onPressed: NotificationService.notImplemented,
                                 ),
                                 NormalButton(
@@ -322,20 +336,6 @@ class _ConsoleState extends State<_Console> {
                   Radius.circular(kDefaultInnerBorderRadius),
                 ),
               ),
-              //suffixIcon: Padding(
-              //  padding: const EdgeInsets.all(10),
-              //  child: CustomSvgButton(
-              //    onPressed: () {
-              //      if (controller.text.isEmpty) {
-              //        return;
-              //      }
-              //      context.read<ModerationCubit>().sendCommand(controller.text);
-              //      controller.clear();
-              //    },
-              //    path: Assets.icons.kblSend.path,
-              //    size: 12,
-              //  ),
-              //),
             ),
             focusNode: focusNode,
             textInputAction: TextInputAction.send,
@@ -503,8 +503,8 @@ class _Punishment extends StatelessWidget {
                   color: hovered
                       ? const Color(0xFFD9D9D9)
                       : isEven
-                      ? const Color(0xFFD9D9D9).withOpacity(.1)
-                      : const Color(0xFFD9D9D9).withOpacity(.2),
+                      ? const Color(0xFFD9D9D9).withValues(alpha: .1)
+                      : const Color(0xFFD9D9D9).withValues(alpha: .2),
                 ),
                 padding: const EdgeInsets.symmetric(
                   horizontal: 10,
@@ -555,6 +555,14 @@ class _Punishment extends StatelessWidget {
                   final until = DateTime.fromMillisecondsSinceEpoch(
                     punishment.expiresAt.toInt(),
                   );
+                  final isPermanent = punishment.expiresAt == 0;
+                  final expires = isPermanent
+                      ? 'PERMANENT'
+                      : DateFormat.yMd().format(until);
+                  final remainingDuration = formatDuration(
+                    until.difference(DateTime.now()),
+                  );
+                  final remaining = isPermanent ? '' : ' ($remainingDuration)';
                   return Padding(
                     padding: const EdgeInsets.symmetric(
                       horizontal: 12,
@@ -564,7 +572,7 @@ class _Punishment extends StatelessWidget {
                       crossAxisAlignment: CrossAxisAlignment.start,
                       children: [
                         Text(
-                          'UNTIL: ${punishment.expiresAt == 0 ? 'PERMANENT' : DateFormat.yMd().format(until)} ${punishment.expiresAt != 0 ? '(${formatDuration(until.difference(DateTime.now()))})' : ''}',
+                          'UNTIL: $expires$remaining',
                           style: const TextStyle(
                             fontFamily: FontFamily.iBMPlexMono,
                             fontSize: 12,
@@ -586,8 +594,10 @@ class _Punishment extends StatelessWidget {
                               KyberButton(
                                 text: 'UNBAN',
                                 onPressed: () {
-                                  context.read<ModerationCubit>().unbanPlayer(
-                                    punishment.user.id,
+                                  unawaited(
+                                    context.read<ModerationCubit>().unbanPlayer(
+                                      punishment.user.id,
+                                    ),
                                   );
                                   NotificationService.info(
                                     message: 'Player unbanned',
@@ -671,8 +681,8 @@ class _ModeratorContainerState extends State<_ModeratorContainer> {
                       color: hovered
                           ? const Color(0xFFD9D9D9)
                           : index.isEven
-                          ? const Color(0xFFD9D9D9).withOpacity(.1)
-                          : const Color(0xFFD9D9D9).withOpacity(.2),
+                          ? const Color(0xFFD9D9D9).withValues(alpha: .1)
+                          : const Color(0xFFD9D9D9).withValues(alpha: .2),
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -696,12 +706,12 @@ class _ModeratorContainerState extends State<_ModeratorContainer> {
                               curve: Curves.easeOut,
                               child: Row(
                                 children: [
-                                  _ModeratorWidget(state, hovered, player),
+                                  _moderatorWidget(state, hovered, player),
                                 ],
                               ),
                             ),
                             if (state.isModerator(player.id)) ...[
-                              _ModeratorWidget(state, hovered, player),
+                              _moderatorWidget(state, hovered, player),
                             ],
                           ],
                         ),
@@ -721,7 +731,7 @@ class _ModeratorContainerState extends State<_ModeratorContainer> {
     );
   }
 
-  Widget _ModeratorWidget(
+  Widget _moderatorWidget(
     ModerationServerState state,
     bool hovered,
     KyberPlayer player,
@@ -770,7 +780,10 @@ class _ModeratorContainerState extends State<_ModeratorContainer> {
                 }
               });
         }
-        context.read<ModerationCubit>().loadModerators();
+        if (!mounted) {
+          return;
+        }
+        unawaited(context.read<ModerationCubit>().loadModerators());
       },
       color: state.isModerator(player.id)
           ? Colors.green
@@ -819,8 +832,8 @@ class _TeamContainerState extends State<_TeamContainer> {
                       color: hovered
                           ? const Color(0xFFD9D9D9)
                           : index.isEven
-                          ? const Color(0xFFD9D9D9).withOpacity(.1)
-                          : const Color(0xFFD9D9D9).withOpacity(.2),
+                          ? const Color(0xFFD9D9D9).withValues(alpha: .1)
+                          : const Color(0xFFD9D9D9).withValues(alpha: .2),
                     ),
                     padding: const EdgeInsets.symmetric(
                       horizontal: 10,
@@ -873,6 +886,9 @@ class _TeamContainerState extends State<_TeamContainer> {
                                           return;
                                         }
 
+                                        if (!context.mounted) {
+                                          return;
+                                        }
                                         await context
                                             .read<ModerationCubit>()
                                             .kickPlayer(
@@ -881,16 +897,12 @@ class _TeamContainerState extends State<_TeamContainer> {
                                             )
                                             .onError((error, stackTrace) {
                                               if (error is GrpcError) {
-                                                NotificationService.showNotification(
+                                                NotificationService.error(
                                                   message: error.message!,
-                                                  severity:
-                                                      InfoBarSeverity.error,
                                                 );
                                               } else {
-                                                NotificationService.showNotification(
+                                                NotificationService.error(
                                                   message: 'An error occurred',
-                                                  severity:
-                                                      InfoBarSeverity.error,
                                                 );
                                                 Logger.root.severe(
                                                   'Error kicking player',
@@ -911,7 +923,7 @@ class _TeamContainerState extends State<_TeamContainer> {
                                     message: 'Ban player'.toUpperCase(),
                                     child: CustomSvgButton(
                                       onPressed: () async {
-                                        final result = await showKyberDialog(
+                                        await showKyberDialog(
                                           context: context,
                                           builder: (_) => BlocProvider.value(
                                             value: context
@@ -938,13 +950,13 @@ class _TeamContainerState extends State<_TeamContainer> {
                                               .servicePlayer
                                               ?.id ==
                                           state.server?.creatorId)
-                                    _ModeratorWidget(state, hovered, player),
+                                    _moderatorWidget(state, hovered, player),
                                 ],
                               ),
                             ),
                             if (state.moderators.contains(player) ||
                                 state.server?.creatorId == player.id) ...[
-                              _ModeratorWidget(state, hovered, player),
+                              _moderatorWidget(state, hovered, player),
                             ],
                           ],
                         ),
@@ -964,7 +976,7 @@ class _TeamContainerState extends State<_TeamContainer> {
     );
   }
 
-  Widget _ModeratorWidget(
+  Widget _moderatorWidget(
     ModerationServerState state,
     bool hovered,
     ServerPlayer player,
@@ -1014,7 +1026,10 @@ class _TeamContainerState extends State<_TeamContainer> {
               });
         }
 
-        context.read<ModerationCubit>().loadModerators();
+        if (!mounted) {
+          return;
+        }
+        unawaited(context.read<ModerationCubit>().loadModerators());
       },
       color: state.isModerator(player.id)
           ? Colors.green

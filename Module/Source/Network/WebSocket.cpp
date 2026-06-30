@@ -21,6 +21,21 @@
 
 namespace Kyber
 {
+namespace
+{
+std::string WebSocketScheme()
+{
+    std::string wsScheme = PlatformUtils::GetEnv("KYBER_WS_SCHEME", "ws");
+    if (wsScheme != "ws" && wsScheme != "wss")
+    {
+        KYBER_LOG(Warning, "LAN_STAGE[proxy.websocket.scheme.invalid] scheme=" << wsScheme << " fallback=ws");
+        return "ws";
+    }
+
+    return wsScheme;
+}
+}
+
 WebSocket::WebSocket(std::string id, uint32_t index, std::shared_ptr<ReceiveQueue> queue)
     : m_id(id)
     , m_index(index)
@@ -33,7 +48,9 @@ bool WebSocket::ConnectAsServer(const std::string& proxyAddress, const std::stri
 {
     Close();
 
-    m_socket->setUrl("ws://" + proxyAddress + "/server");
+    const std::string url = WebSocketScheme() + "://" + proxyAddress + "/server";
+    KYBER_LOG(Info, "LAN_STAGE[proxy.websocket.connect_server] id=" << m_id << " url=" << url);
+    m_socket->setUrl(url);
 
     ix::WebSocketHttpHeaders headers;
     headers["Compression"] = "None";
@@ -49,7 +66,9 @@ bool WebSocket::ConnectAsClient(const std::string& proxyAddress, const std::stri
 {
     Close();
 
-    m_socket->setUrl("ws://" + proxyAddress + "/client");
+    const std::string url = WebSocketScheme() + "://" + proxyAddress + "/client";
+    KYBER_LOG(Info, "LAN_STAGE[proxy.websocket.connect_client] id=" << m_id << " url=" << url);
+    m_socket->setUrl(url);
 
     ix::WebSocketHttpHeaders headers;
     headers["Compression"] = "None";

@@ -5,7 +5,7 @@ import 'package:grpc/grpc.dart' hide Server;
 import 'package:kyber/kyber.dart';
 import 'package:kyber_launcher/core/services/rich_presence.dart';
 import 'package:kyber_launcher/core/services/voip_service.dart';
-import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/server_browser/helpers/lan_server_helper.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:logging/logging.dart';
@@ -20,15 +20,14 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
     );
 
     _rpcServerTimer = Timer.periodic(const Duration(minutes: 2), (_) async {
-      if (!sl.isRegistered<MaximaGameInstance>()) {
+      final instance = sl.get<MaximaInstanceService>().primaryInstance;
+      if (instance == null) {
         return;
       }
 
-      final commonState = await sl
-          .get<MaximaGameInstance>()
-          .clientService
-          .commonClient
-          .getInfo(Empty());
+      final commonState = await instance.clientService.commonClient.getInfo(
+        Empty(),
+      );
       if (!commonState.hasServer() && !commonState.client.hasServerId()) {
         sl.get<RichPresence>().clearPresence();
         return;
@@ -65,8 +64,8 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
   }
 
   Future<void> onTick() async {
-    final isRegistered = sl.isRegistered<MaximaGameInstance>();
-    if (!isRegistered) {
+    final instance = sl.get<MaximaInstanceService>().primaryInstance;
+    if (instance == null) {
       final rp = sl.get<RichPresence>();
       if (state is! KyberStatusInitial || rp.started != null) {
         sl.get<RichPresence>().clearPresence();
@@ -78,10 +77,11 @@ class KyberStatusCubit extends Cubit<KyberStatusState> {
     }
 
     try {
-      final client = sl.get<MaximaGameInstance>();
-      final data = await client.clientService.commonClient.getInfo(Empty());
-      if (data.vivoxInitialized && client.voipSettings == null) {
-        sl.get<VoipService>().setGameVoipSettings();
+      final data = await instance.clientService.commonClient.getInfo(Empty());
+      if (!instance.isDedicated &&
+          data.vivoxInitialized &&
+          instance.voipSettings == null) {
+        await sl.get<VoipService>().setGameVoipSettings();
       }
 
       final isKyber = data.hasClient() || data.hasServer();

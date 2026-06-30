@@ -243,6 +243,24 @@ class HostServer {
 
   set port(int value) => box.put('hostPort', value);
 
+  String get dedicatedGamePath =>
+      box.get('hostDedicatedGamePath', defaultValue: '') as String;
+
+  set dedicatedGamePath(String value) =>
+      box.put('hostDedicatedGamePath', value);
+
+  String get dedicatedRuntimeRoot =>
+      box.get('hostDedicatedRuntimeRoot', defaultValue: '') as String;
+
+  set dedicatedRuntimeRoot(String value) =>
+      box.put('hostDedicatedRuntimeRoot', value);
+
+  String get dedicatedLicenseMode =>
+      box.get('hostDedicatedLicenseMode', defaultValue: 'refresh') as String;
+
+  set dedicatedLicenseMode(String value) =>
+      box.put('hostDedicatedLicenseMode', value);
+
   bool get onlineMode =>
       box.get('hostOnlineMode', defaultValue: true) as bool? ?? true;
 

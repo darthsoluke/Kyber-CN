@@ -40,5 +40,7 @@ COPY --from=builder /src/kyber-api .
 
 EXPOSE 9027 8080
 
+ENV HTTP_PORT=8080
+
 USER kyber
 ENTRYPOINT ["./kyber-api"]

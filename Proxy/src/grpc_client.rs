@@ -24,9 +24,15 @@ impl GrpcClient {
         Ok(GrpcClient { client })
     }
 
-    pub async fn get_server(&mut self, server_id: String) -> Result<(String, u32), Box<dyn std::error::Error>> {
+    pub async fn get_server(
+        &mut self,
+        server_id: String,
+    ) -> Result<(String, u32), Box<dyn std::error::Error>> {
         let token = "some_token".to_string();
-        let request = Request::new(ServerRequest { id: server_id, token: Some(token) });
+        let request = Request::new(ServerRequest {
+            id: server_id,
+            token: Some(token),
+        });
         let response = self.client.get_server(request).await?;
 
         let server = response.into_inner();
@@ -35,5 +41,4 @@ impl GrpcClient {
 
         Ok((server_ip, server_port))
     }
-
 }

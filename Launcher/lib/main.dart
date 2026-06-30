@@ -27,6 +27,7 @@ import 'package:kyber_launcher/features/events/providers/event_cubic.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_api_status_cubit.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_proxy_cubit.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_status_cubit.dart';
+import 'package:kyber_launcher/features/launcher_mode/providers/launcher_mode_cubit.dart';
 import 'package:kyber_launcher/features/map_rotation/providers/map_rotation_cubit.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_rtm_cubit.dart';
@@ -338,6 +339,7 @@ class _AppState extends State<App> {
                 return DisableAcrylic(
                   child: MultiBlocProvider(
                     providers: [
+                      BlocProvider(create: (_) => LauncherModeCubit()),
                       BlocProvider(create: (_) => StatusCubit()),
                       BlocProvider(create: (_) => MaximaCubit()),
                       BlocProvider(create: (_) => MaximaRtmCubit()),

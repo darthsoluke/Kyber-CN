@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:go_router/go_router.dart';
+import 'package:kyber_launcher/features/launcher_mode/providers/launcher_mode_cubit.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/maxima/providers/maxima_rtm_cubit.dart';
 import 'package:kyber_launcher/features/maxima/screens/maxima_login.dart';
@@ -37,40 +38,58 @@ class NavigationContent extends StatelessWidget {
           ],
         ),
       ),
-      content: BlocConsumer<MaximaCubit, MaximaState>(
-        listener: (context, maximaState) async {
-          if (maximaState.loggedIn &&
-              !context.read<MaximaRtmCubit>().isRtmConnected()) {
-            onMaximaLoggedIn();
-          }
-        },
-        builder: (context, maximaState) {
-          if (!maximaState.loggedIn) {
-            return const MaximaLogin();
+      content: BlocBuilder<LauncherModeCubit, LauncherModeState>(
+        builder: (context, modeState) {
+          if (modeState.isDedicatedOnly) {
+            return _RoutedContent(route: state.uri.toString(), child: child);
           }
 
-          return BlocBuilder<StatusCubit, ApplicationStatus>(
-            builder: (_, state) => Stack(
-              children: [
-                Positioned.fill(
-                  top: 70,
-                  child: Align(
-                    alignment: Alignment.centerLeft,
-                    child: child,
-                  ),
-                ),
-                Positioned.fill(
-                  key: const ValueKey('navigation_bar_list'),
-                  top: 5,
-                  bottom: null,
-                  child: NavigationBarList(
-                    route: this.state.uri.toString(),
-                  ),
-                ),
-              ],
-            ),
+          return BlocConsumer<MaximaCubit, MaximaState>(
+            listener: (context, maximaState) async {
+              if (maximaState.loggedIn &&
+                  !context.read<MaximaRtmCubit>().isRtmConnected()) {
+                onMaximaLoggedIn();
+              }
+            },
+            builder: (context, maximaState) {
+              if (!maximaState.loggedIn) {
+                return const MaximaLogin();
+              }
+
+              return _RoutedContent(route: state.uri.toString(), child: child);
+            },
           );
         },
+      ),
+    );
+  }
+}
+
+class _RoutedContent extends StatelessWidget {
+  const _RoutedContent({required this.child, required this.route});
+
+  final Widget child;
+  final String route;
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<StatusCubit, ApplicationStatus>(
+      builder: (_, state) => Stack(
+        children: [
+          Positioned.fill(
+            top: 70,
+            child: Align(
+              alignment: Alignment.centerLeft,
+              child: child,
+            ),
+          ),
+          Positioned.fill(
+            key: const ValueKey('navigation_bar_list'),
+            top: 5,
+            bottom: null,
+            child: NavigationBarList(route: route),
+          ),
+        ],
       ),
     );
   }
