@@ -238,19 +238,20 @@ final class DedicatedServerRuntimeService {
     const credentiallessLicenseMarker =
         'credentialless launch requires a valid local license for content';
     if (message.contains(credentiallessLicenseMarker)) {
-      return 'credentialless host mode requires a valid local BFII license '
-          'in the Wine prefix. Import 1035052.dlf with '
-          'KYBER_LICENSE_IMPORT_DIR, or run through the credentialed path once '
-          'to provision the license.';
+      return 'Passwordless direct host mode could not find a valid local BFII '
+          'license on this Windows machine. Sign in through the normal '
+          'EA/Maxima OAuth flow and retry with BFII license mode set to '
+          'refresh.';
     }
 
     const credentiallessMachineMarker =
         'credentialless launch local license for content';
     if (message.contains(credentiallessMachineMarker)) {
-      return 'credentialless host mode found a BFII license, but it was '
-          'generated for a different machine/Wine prefix. Provision the '
-          'license inside this exact WSL/Docker Wine prefix, or use a license '
-          'sync endpoint that stores a prefix-matching 1035052.dlf.';
+      return 'Passwordless direct host mode found a BFII license, but it was '
+          'generated for a different machine or stale EA runtime state. Retry '
+          'with BFII license mode set to refresh so Maxima can regenerate '
+          r'C:\ProgramData\Electronic Arts\EA Services\License\1035052.dlf '
+          'through the normal EA OAuth session.';
     }
 
     if (message.contains('INVALID_PASSWORD')) {
@@ -262,8 +263,9 @@ final class DedicatedServerRuntimeService {
     if (message.contains('Invalid Cipher') ||
         message.contains('Invalid license')) {
       return 'BFII rejected the local EA license (Invalid Cipher). '
-          'Stop all BFII host processes, refresh the EA/Maxima credentials, '
-          'and let Maxima request a fresh license on the next launch.';
+          'Stop all BFII host processes, sign in through the normal '
+          'EA/Maxima OAuth flow, and retry with BFII license mode set to '
+          'refresh.';
     }
 
     return message.split('Stack backtrace:').first.trim();
@@ -323,7 +325,26 @@ final class DedicatedServerRuntimeService {
       return;
     }
 
-    File(runtimeFiles.vivoxSdk).copySync(targetVivox.path);
+    try {
+      File(runtimeFiles.vivoxSdk).copySync(targetVivox.path);
+    } on FileSystemException catch (e) {
+      final osErrorCode = e.osError?.errorCode;
+      final osErrorMessage = e.osError?.message ?? e.message;
+      if (osErrorCode == 5) {
+        throw DedicatedServerRuntimeException(
+          'Cannot install BFII runtime dependency vivoxsdk.dll to '
+          '${targetVivox.path}: access denied. BFII is installed in a '
+          'protected directory. Run Kyber Launcher as Administrator once, '
+          'approve the dedicated host runtime install prompt, or move BFII '
+          'to a writable game library, then retry.',
+        );
+      }
+
+      throw DedicatedServerRuntimeException(
+        'Cannot install BFII runtime dependency vivoxsdk.dll to '
+        '${targetVivox.path}: $osErrorMessage',
+      );
+    }
     _logger.info('Installed vivoxsdk.dll to ${targetVivox.path}');
   }
 

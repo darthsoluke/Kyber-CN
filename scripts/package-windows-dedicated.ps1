@@ -25,7 +25,31 @@ if ([string]::IsNullOrWhiteSpace($CliBundleDirectory)) {
     }
 }
 if ([string]::IsNullOrWhiteSpace($ModulePath)) {
-    $ModulePath = Join-Path $Root 'CLI\dev_build\module_runtime'
+    $candidateModulePaths = @(
+        (Join-Path $Root 'artifacts\module'),
+        (Join-Path $Root 'Launcher\build\windows\x64\runner\Release\module'),
+        (Join-Path $Root 'Module\bazel-bin'),
+        (Join-Path $Root 'Launcher\build\windows\x64\runner\Debug\module'),
+        (Join-Path $Root 'CLI\dev_build\module_runtime')
+    )
+    $validModulePaths = @()
+    foreach ($candidate in $candidateModulePaths) {
+        $candidateKyber = Join-Path $candidate 'Kyber.dll'
+        $candidateVivox = Join-Path $candidate 'vivoxsdk.dll'
+        if ((Test-Path -LiteralPath $candidateKyber -PathType Leaf) -and
+            (Test-Path -LiteralPath $candidateVivox -PathType Leaf)) {
+            $validModulePaths += [pscustomobject]@{
+                Path = $candidate
+                KyberTime = (Get-Item -LiteralPath $candidateKyber).LastWriteTimeUtc
+            }
+        }
+    }
+
+    if ($validModulePaths.Count -eq 0) {
+        $ModulePath = Join-Path $Root 'CLI\dev_build\module_runtime'
+    } else {
+        $ModulePath = ($validModulePaths | Sort-Object -Property KyberTime -Descending | Select-Object -First 1).Path
+    }
 }
 if ([string]::IsNullOrWhiteSpace($CertificatePath)) {
     $candidateCertificatePaths = @(
@@ -119,10 +143,14 @@ Require-Directory $CliBundleDirectory 'CLI bundle directory'
 Require-File (Join-Path $CliBundleDirectory 'bin\kyber_cli.exe') 'kyber_cli.exe'
 Require-File (Join-Path $CliBundleDirectory 'lib\rust_lib.dll') 'rust_lib.dll'
 Require-Directory $ModulePath 'Kyber module directory'
-Require-File (Join-Path $ModulePath 'Kyber.dll') 'Kyber.dll'
+$moduleDllPath = Join-Path $ModulePath 'Kyber.dll'
+Require-File $moduleDllPath 'Kyber.dll'
 Require-File (Join-Path $ModulePath 'vivoxsdk.dll') 'vivoxsdk.dll'
 Require-File $CertificatePath 'ca_root.pem'
 Require-File (Join-Path $PSScriptRoot 'run-dedicated.ps1') 'run-dedicated.ps1'
+if (!(Test-BinaryContainsAscii -Path $moduleDllPath -Text 'isDirectId')) {
+    throw "Kyber.dll is stale or missing direct server classification marker 'isDirectId': $moduleDllPath. Rebuild Module and run Module\scripts\stage_module.ps1 before packaging."
+}
 
 Reset-OutputDirectory $OutputDirectory
 
@@ -177,7 +205,7 @@ $hostConfig = @"
 `$ServerPassword = ''
 `$RawMods = ''
 `$StartupCommands = ''
-`$LicenseMode = 'reuse'
+`$LicenseMode = 'refresh'
 `$DenuvoToken = ''
 
 # Optional:
@@ -367,8 +395,8 @@ Process cleanup:
 - Launcher host startup passes `-CleanupOrphans` automatically, so accidental stale host/client processes are cleaned before startup.
 
 License mode:
-- `reuse` is the default. It keeps valid local/synced license files, but invalid BFII license headers are discarded so Maxima can request a clean license.
-- `refresh` forces a fresh EA license request and should be used only when the user explicitly wants to reprovision activation state.
+- `refresh` is the default. It uses the normal EA OAuth/Maxima session to regenerate the local BFII license before host startup.
+- `reuse` is an advanced option. It is faster, but stale or machine-mismatched licenses can fail with BFII activation errors.
 - `DenuvoToken` is an advanced optional override and is never printed by the scripts.
 
 Joining machine:

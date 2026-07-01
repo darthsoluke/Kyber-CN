@@ -102,8 +102,9 @@ class StartServerCommand extends Command<int> {
       ..addFlag(
         'credentialless-host',
         help:
-            'Start an offline/direct BFII host without EA/Maxima credentials. '
-            'Requires an already provisioned BFII/Wine runtime state.',
+            'Start an offline/direct BFII host without EA/Maxima passwords. '
+            'Uses the normal EA OAuth/Maxima session to refresh local BFII '
+            'license state before launching.',
         negatable: false,
       )
       ..addOption('token', help: 'Specify the Kyber auth token')
@@ -196,7 +197,7 @@ class StartServerCommand extends Command<int> {
       ..info('Starting Maxima runtime...');
 
     try {
-      await startMaxima(dummyAuthStorage: credentiallessHost);
+      await startMaxima(dummyAuthStorage: false);
     } catch (e) {
       _logger.err('Failed to start Maxima runtime: $e');
       return ExitCode.software.code;
@@ -204,7 +205,7 @@ class StartServerCommand extends Command<int> {
 
     _logger.info(
       credentiallessHost
-          ? 'Resolving credentialless offline host identity...'
+          ? 'Resolving passwordless EA/Maxima OAuth host session...'
           : credentials != null
           ? 'Logging in with dedicated Maxima credentials...'
           : 'Starting login flow...',
@@ -226,7 +227,8 @@ class StartServerCommand extends Command<int> {
     _logger
       ..success(
         credentiallessHost
-            ? 'Using credentialless host identity ${authContext.playerName}.'
+            ? 'Using passwordless direct host session for '
+                  '${authContext.playerName}.'
             : credentials != null
             ? 'Logged in dedicated host as ${authContext.playerName}.'
             : 'Logged in as ${authContext.playerName}.',
@@ -538,7 +540,7 @@ class StartServerCommand extends Command<int> {
         optionValue ??
         Platform.environment['KYBER_DEDICATED_LICENSE_MODE'] ??
         Platform.environment['KYBER_LICENSE_MODE'];
-    final value = (rawValue ?? 'reuse').trim().toLowerCase();
+    final value = (rawValue ?? 'refresh').trim().toLowerCase();
 
     return switch (value) {
       'reuse' => _BfiiLicenseMode.reuse,

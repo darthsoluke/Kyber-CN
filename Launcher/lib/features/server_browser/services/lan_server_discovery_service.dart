@@ -47,21 +47,7 @@ class LanServerDiscoveryService {
       'timeoutMs=${timeout.inMilliseconds}',
     );
 
-    final target = await _resolveTarget(host);
-    final servers = await _collectResponses(
-      targets: [_ProbeTarget(target, discoveryPort)],
-      timeout: timeout,
-      mode: _DiscoveryMode.endpoint,
-    );
-
-    if (servers.isEmpty) {
-      throw StateError(
-        'No dedicated server metadata response from $host:$discoveryPort. '
-        'Open UDP $discoveryPort on the host, router, and cloud firewall.',
-      );
-    }
-
-    final server = servers.first;
+    final server = await discoverHost(host: host, timeout: timeout);
     if (server.port != expectedGamePort) {
       throw StateError(
         'Dedicated server metadata responded from $host, but advertised game '
@@ -78,6 +64,38 @@ class LanServerDiscoveryService {
 
     _logger.info(
       'DIRECT_STAGE[discovery.endpoint.finished] '
+      'id=${server.id} ip=${server.ip} port=${server.port} '
+      'mods=${server.mods.length}',
+    );
+    return server;
+  }
+
+  Future<Server> discoverHost({
+    required String host,
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    _logger.info(
+      'DIRECT_STAGE[discovery.host.start] '
+      'host=$host timeoutMs=${timeout.inMilliseconds}',
+    );
+
+    final target = await _resolveTarget(host);
+    final servers = await _collectResponses(
+      targets: [_ProbeTarget(target, discoveryPort)],
+      timeout: timeout,
+      mode: _DiscoveryMode.endpoint,
+    );
+
+    if (servers.isEmpty) {
+      throw StateError(
+        'No dedicated server metadata response from $host:$discoveryPort. '
+        'Open UDP $discoveryPort on the host, router, and cloud firewall.',
+      );
+    }
+
+    final server = servers.first;
+    _logger.info(
+      'DIRECT_STAGE[discovery.host.finished] '
       'id=${server.id} ip=${server.ip} port=${server.port} '
       'mods=${server.mods.length}',
     );

@@ -193,11 +193,12 @@ class AppLocalizations {
       'settings.dedicatedHost.dialogDescription':
           'Configure the local Battlefront II path, runtime package, and '
           'license behavior used by the BFII host-server process.',
-      'settings.dedicatedHost.authSession': 'EA/Maxima session',
+      'settings.dedicatedHost.authSession': 'Passwordless direct host',
       'settings.dedicatedHost.authSessionHint':
-          'Dedicated hosting uses the normal EA OAuth/Maxima session already '
-          'stored by the Launcher. Direct password login is disabled in this '
-          'shipping build, so passwords are not saved or passed to the helper.',
+          'Shipping dedicated hosting does not save or pass EA passwords. '
+          'It signs in through the normal EA OAuth/Maxima session only when '
+          'the local BFII license must be refreshed, then starts the host '
+          'process in offline/direct mode.',
       'settings.dedicatedHost.clearLegacyCredentials':
           'Clear Legacy Saved Credentials',
       'settings.dedicatedHost.user': 'EA/Maxima username',
@@ -209,12 +210,13 @@ class AppLocalizations {
       'settings.dedicatedHost.passwordOptional': 'leave blank to keep current',
       'settings.dedicatedHost.licenseMode': 'BFII license mode',
       'settings.dedicatedHost.licenseModeReuse':
-          'Reuse cached license (advanced)',
+          'Reuse local license (advanced)',
       'settings.dedicatedHost.licenseModeRefresh':
-          'Force refresh license (recommended)',
+          'Refresh local license (recommended)',
       'settings.dedicatedHost.licenseModeHint':
-          'Dedicated hosting should refresh the BFII license before launch. '
-          'Use cached reuse only when you intentionally want a faster local retry.',
+          'Refresh uses the normal EA OAuth/Maxima session to regenerate the '
+          'local BFII license before startup. Reuse is faster, but can fail if '
+          'the license was generated for another machine or stale EA state.',
       'settings.dedicatedHost.denuvoToken': 'Denuvo token override (optional)',
       'settings.dedicatedHost.denuvoTokenPreserve':
           'Denuvo token override (leave blank to keep saved token)',
@@ -263,7 +265,7 @@ class AppLocalizations {
       'serverBrowser.lanHint.description':
           'Direct servers expose metadata before join. KYBER reads map, password state, and required mods first, then uses the normal official-style mod check and download flow.',
       'serverBrowser.searchLanPlaceholder':
-          'Search direct servers, host name or IP',
+          'Search direct servers, host name, IP, or IP:port',
       'serverBrowser.directConnect': 'Direct Connect',
       'serverBrowser.directConnectFailed': 'Direct connect failed',
       'serverBrowser.lanCount': '{count} direct',
@@ -447,17 +449,27 @@ class AppLocalizations {
       'host.ingame.changeMap': 'CHANGE MAP',
       'host.ingame.pauseTimer': 'Pause Timer',
       'maxima.gameLaunching': 'GAME LAUNCHING',
+      'maxima.joinLaunching': 'JOINING SERVER',
       'maxima.dedicatedLaunching': 'BFII HOST SERVER STARTING',
       'maxima.updatingModule': 'Updating Kyber Module...',
       'maxima.startingGame': 'Starting Game...',
+      'maxima.startingJoin': 'Starting BFII and joining server...',
       'maxima.startingDedicated': 'Starting BFII Host Server...',
       'maxima.progress.prepareModule': 'Preparing bundled KYBER module...',
       'maxima.progress.preloadMods': 'Preloading selected mods...',
       'maxima.progress.checkService': 'Checking Maxima background service...',
-      'maxima.progress.launchBfii':
-          'Requesting BFII host process launch through Maxima...',
+      'maxima.progress.launchBfii': 'Requesting BFII launch through Maxima...',
+      'maxima.progress.waitKyberInterface':
+          'Waiting for the KYBER module interface...',
+      'maxima.progress.joinConfirm':
+          'Waiting for BFII to enter the selected server...',
+      'maxima.progress.joinConnectionObserved':
+          'Join request reached the BFII client; waiting for in-game confirmation...',
+      'maxima.progress.joinConfirmed': 'Server join confirmed.',
       'maxima.startingGameDescription':
           'Please wait while the game is starting. This may take a few seconds.',
+      'maxima.startingJoinDescription':
+          'Please wait while BFII starts, loads the KYBER module, and enters the selected server.',
       'maxima.startingDedicatedDescription':
           'Please wait while the BFII host-server process starts. The Host page will show server controls after launch succeeds.',
       'maxima.failedToUpdateModule': 'Failed to update Kyber Module: {message}',
@@ -703,9 +715,9 @@ class AppLocalizations {
       'settings.dedicatedHost.dialogTitle': 'BFII 独立主机服配置',
       'settings.dedicatedHost.dialogDescription':
           '配置本地 Battlefront II 路径、运行时包和 BFII 主机服进程使用的许可证策略。',
-      'settings.dedicatedHost.authSession': 'EA/Maxima 会话',
+      'settings.dedicatedHost.authSession': '免密码直连主机服',
       'settings.dedicatedHost.authSessionHint':
-          'Dedicated 开服会复用 Launcher 已保存的正常 EA OAuth/Maxima 会话。发行版禁用密码直登，因此不会保存密码，也不会把密码传给 helper。',
+          '发行版主机服不会保存或传递 EA 密码。只有在需要刷新本机 BFII 许可证时，才会通过正常 EA OAuth/Maxima 会话登录；随后仍以离线/直连模式启动主机进程。',
       'settings.dedicatedHost.clearLegacyCredentials': '清除旧版已保存凭据',
       'settings.dedicatedHost.user': 'EA/Maxima 用户名',
       'settings.dedicatedHost.userPlaceholder': '邮箱或 EA ID',
@@ -714,10 +726,10 @@ class AppLocalizations {
       'settings.dedicatedHost.passwordPlaceholder': '密码',
       'settings.dedicatedHost.passwordOptional': '留空保留当前密码',
       'settings.dedicatedHost.licenseMode': 'BFII 许可证策略',
-      'settings.dedicatedHost.licenseModeReuse': '复用缓存许可证（高级）',
-      'settings.dedicatedHost.licenseModeRefresh': '强制刷新许可证（推荐）',
+      'settings.dedicatedHost.licenseModeReuse': '复用本机许可证（高级）',
+      'settings.dedicatedHost.licenseModeRefresh': '刷新本机许可证（推荐）',
       'settings.dedicatedHost.licenseModeHint':
-          'Dedicated 开服应在启动前刷新 BFII 许可证。只有明确需要更快的本机重试时，才复用缓存许可证。',
+          '刷新会通过正常 EA OAuth/Maxima 会话重新生成本机 BFII 许可证后再启动。复用速度更快，但旧许可证来自其他机器或 EA 状态过期时会失败。',
       'settings.dedicatedHost.denuvoToken': 'Denuvo Token 覆盖（可选）',
       'settings.dedicatedHost.denuvoTokenPreserve':
           'Denuvo Token 覆盖（留空则保留已保存 Token）',
@@ -763,7 +775,7 @@ class AppLocalizations {
       'serverBrowser.lanHint.title': '直连 BFII 主机服',
       'serverBrowser.lanHint.description':
           '直连 BFII 主机服会在加入前暴露服务器元数据。KYBER 会先读取地图、密码状态和所需模组，再走正常的模组检查与下载流程。',
-      'serverBrowser.searchLanPlaceholder': '搜索直连服务器、主机名或 IP',
+      'serverBrowser.searchLanPlaceholder': '搜索直连服务器、主机名、IP 或 IP:端口',
       'serverBrowser.directConnect': '直连',
       'serverBrowser.directConnectFailed': '直连失败',
       'serverBrowser.lanCount': '{count} 个直连服务器',
@@ -921,15 +933,22 @@ class AppLocalizations {
       'host.ingame.changeMap': '更换地图',
       'host.ingame.pauseTimer': '暂停计时器',
       'maxima.gameLaunching': '正在启动游戏',
+      'maxima.joinLaunching': '正在加入服务器',
       'maxima.dedicatedLaunching': '正在启动 BFII 主机服',
       'maxima.updatingModule': '正在更新 Kyber 模块...',
       'maxima.startingGame': '正在启动游戏...',
+      'maxima.startingJoin': '正在启动 BFII 并加入服务器...',
       'maxima.startingDedicated': '正在启动 BFII 主机服...',
       'maxima.progress.prepareModule': '正在准备内置 KYBER 模块...',
       'maxima.progress.preloadMods': '正在预加载所选模组...',
       'maxima.progress.checkService': '正在检查 Maxima 后台服务...',
-      'maxima.progress.launchBfii': '正在通过 Maxima 请求启动 BFII 主机进程...',
+      'maxima.progress.launchBfii': '正在通过 Maxima 请求启动 BFII...',
+      'maxima.progress.waitKyberInterface': '正在等待 KYBER 模块接口...',
+      'maxima.progress.joinConfirm': '正在等待 BFII 进入所选服务器...',
+      'maxima.progress.joinConnectionObserved': '加入请求已到达 BFII 客户端，正在等待游戏内确认...',
+      'maxima.progress.joinConfirmed': '已确认加入服务器。',
       'maxima.startingGameDescription': '请稍候，游戏正在启动中。这可能需要几秒钟。',
+      'maxima.startingJoinDescription': '请稍候，BFII 将启动、加载 KYBER 模块，并进入所选服务器。',
       'maxima.startingDedicatedDescription':
           '请稍候，BFII 主机服进程正在启动。启动成功后，开服页面会显示服务器控制面板。',
       'maxima.failedToUpdateModule': '更新 Kyber 模块失败：{message}',

@@ -110,15 +110,14 @@ final class DedicatedServerAuthService {
     required String? credentials,
     required bool credentiallessHost,
   }) async {
-    if (credentiallessHost) {
-      _logger.info(
-        'LAN_STAGE[cli.start_server.auth.skip] '
-        'reason=credentialless_offline_host loginFlow=disabled',
-      );
-      return 'CredentiallessHost';
-    }
-
     try {
+      if (credentiallessHost) {
+        _logger.info(
+          'LAN_STAGE[cli.start_server.auth.oauth] '
+          'reason=passwordless_direct_host tokenSource=maxima_session',
+        );
+      }
+
       final player = await loginFlow();
       return player.displayName;
     } catch (e) {

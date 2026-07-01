@@ -107,7 +107,7 @@ class _DedicatedHostSetupDialogState extends State<DedicatedHostSetupDialog> {
                   ComboBox<DedicatedHostLicenseMode>(
                     value: _licenseMode,
                     isExpanded: true,
-                    items: DedicatedHostLicenseMode.values
+                    items: const [DedicatedHostLicenseMode.refresh]
                         .map(
                           (mode) => ComboBoxItem<DedicatedHostLicenseMode>(
                             value: mode,
@@ -115,14 +115,6 @@ class _DedicatedHostSetupDialogState extends State<DedicatedHostSetupDialog> {
                           ),
                         )
                         .toList(),
-                    onChanged: _saving
-                        ? null
-                        : (value) {
-                            if (value == null) {
-                              return;
-                            }
-                            setState(() => _licenseMode = value);
-                          },
                   ),
                   const SizedBox(height: 6),
                   Text(
@@ -278,7 +270,7 @@ class _DedicatedHostSetupDialogState extends State<DedicatedHostSetupDialog> {
       _service.gamePath = _gamePathController.text;
       _service.runtimeRoot = _runtimeRootController.text;
       await _service.saveLicenseSettings(
-        mode: _licenseMode,
+        mode: DedicatedHostLicenseMode.refresh,
         denuvoToken: _denuvoTokenController.text,
         preserveDenuvoToken:
             _hasDenuvoToken && _denuvoTokenController.text.trim().isEmpty,

@@ -7,6 +7,7 @@ import 'package:kyber/kyber.dart';
 import 'package:kyber_collection/kyber_collection.dart';
 import 'package:kyber_launcher/core/core.dart';
 import 'package:kyber_launcher/features/kyber/dialogs/kyber_anti_virus_exclusion.dart';
+import 'package:kyber_launcher/features/kyber/services/server_join_confirmation_service.dart';
 import 'package:kyber_launcher/features/maxima/dialogs/maxima_expired_session_dialog.dart';
 import 'package:kyber_launcher/features/maxima/dialogs/maxima_game_locator_dialog.dart';
 import 'package:kyber_launcher/features/maxima/dialogs/maxima_game_not_found_dialog.dart';
@@ -47,13 +48,22 @@ class MaximaLaunchResult {
   final String? message;
 }
 
+enum _MaximaLaunchMode {
+  game,
+  joinServer,
+  dedicatedServer,
+}
+
 class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
-  Timer? _gameStatusTimer;
-  StreamSubscription<String>? _gameEvents;
+  final Logger _logger = Logger('maxima_start_game_dialog');
 
   bool updating = false;
   bool preloadingMods = false;
   String? lastEvent;
+
+  bool _isDirectJoinId(String id) {
+    return id.startsWith('lan:') || id.startsWith('direct:');
+  }
 
   bool _isOfflineDirectRequest(InitializeRequest request) {
     if (request.hasStartServer() &&
@@ -64,7 +74,7 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
 
     if (request.hasJoinServer()) {
       final joinServer = request.joinServer;
-      return joinServer.joinToken.isEmpty && joinServer.id.startsWith('lan:');
+      return joinServer.joinToken.isEmpty && _isDirectJoinId(joinServer.id);
     }
 
     return false;
@@ -74,6 +84,22 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
     return request.hasStartServer() &&
         request.startServer.hasOnlineMode() &&
         !request.startServer.onlineMode;
+  }
+
+  bool _isJoinServerRequest(InitializeRequest request) {
+    return request.hasJoinServer();
+  }
+
+  _MaximaLaunchMode _launchMode(InitializeRequest request) {
+    if (_isDedicatedServerRequest(request)) {
+      return _MaximaLaunchMode.dedicatedServer;
+    }
+
+    if (_isJoinServerRequest(request)) {
+      return _MaximaLaunchMode.joinServer;
+    }
+
+    return _MaximaLaunchMode.game;
   }
 
   bool _requiresModuleModSupport(InitializeRequest request) {
@@ -94,6 +120,24 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
 
   Future<void> _start() async {
     final req = widget.initializeRequest ?? .new();
+    final initialMode = _launchMode(req);
+    _logger.info(
+      'DIRECT_STAGE[maxima.dialog.start] '
+      'mode=${initialMode.name} hasJoin=${req.hasJoinServer()} '
+      'hasStartServer=${req.hasStartServer()} hasModData=${req.hasModData()} '
+      'offlineDirect=${_isOfflineDirectRequest(req)}',
+    );
+    if (req.hasJoinServer()) {
+      _logger.info(
+        'DIRECT_STAGE[maxima.dialog.join.request] '
+        'id=${req.joinServer.id} '
+        'ip=${req.joinServer.ip}:${req.joinServer.port} '
+        'type=${req.joinServer.type.name} '
+        'joinTokenPresent=${req.joinServer.joinToken.isNotEmpty} '
+        'passwordPresent=${req.joinServer.password.isNotEmpty}',
+      );
+    }
+
     _setLastEvent('maxima.progress.prepareModule');
     final moduleVersionService = ModuleVersionService();
     final requiresModSupport = _requiresModuleModSupport(req);
@@ -121,6 +165,10 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
         message: message,
         severity: InfoBarSeverity.error,
       );
+      _logger.severe(
+        'DIRECT_STAGE[maxima.dialog.module.missing] '
+        'requireModSupport=$requiresModSupport',
+      );
       _finishFailure(message);
       return;
     }
@@ -129,42 +177,47 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
       await _prepareMods(req);
       _setLastEvent('maxima.progress.checkService');
       await checkService();
-      final dedicatedServerRequest = _isDedicatedServerRequest(req);
+      final launchMode = _launchMode(req);
+      final joinConfirmation = ServerJoinConfirmationService();
+      if (launchMode == _MaximaLaunchMode.joinServer) {
+        joinConfirmation.resetJoinSignal();
+      }
+
       _setLastEvent('maxima.progress.launchBfii');
+      _logger.info(
+        'DIRECT_STAGE[maxima.dialog.launch.start] mode=${launchMode.name}',
+      );
       final instance = await MaximaHelper.startGame(
         gameDataPath: widget.gameDataDir,
         initializeRequest: req,
         mods: widget.mods,
       );
+      _logger.info(
+        'DIRECT_STAGE[maxima.dialog.launch.done] '
+        'mode=${launchMode.name} pid=${instance.pid}',
+      );
       if (!mounted) {
         return;
       }
 
-      if (dedicatedServerRequest) {
+      if (launchMode == _MaximaLaunchMode.dedicatedServer) {
         _finishSuccess();
         return;
       }
 
-      _gameEvents = instance.eventStream.listen(
-        (event) {
-          setState(() => lastEvent = event);
-
-          if ([
-            'IsProgressiveInstallationAvailable',
-            'GetGameInfo',
-            'GetInfo',
-          ].contains(event)) {
-            unawaited(_gameEvents?.cancel() ?? Future<void>.value());
-            _finishSuccess();
-          }
-        },
-        onDone: () => _finishFailure(
-          'Game event stream closed before startup completed.',
-        ),
-        cancelOnError: true,
-        onError: (Object error) =>
-            _finishFailure('Game event stream error: $error'),
+      await joinConfirmation.waitForClientInterface(
+        instance,
+        onProgress: _setLastEvent,
       );
+      if (launchMode == _MaximaLaunchMode.joinServer) {
+        await joinConfirmation.waitForJoin(
+          instance,
+          req.joinServer,
+          onProgress: _setLastEvent,
+        );
+      }
+
+      _finishSuccess();
     } on Object catch (error, stackTrace) {
       _handleLaunchError(error, stackTrace);
     }
@@ -198,8 +251,12 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
   }
 
   void _handleLaunchError(Object error, StackTrace stackTrace) {
-    unawaited(_gameEvents?.cancel() ?? Future<void>.value());
     final message = _launchErrorMessage(error);
+    _logger.severe(
+      'DIRECT_STAGE[maxima.dialog.launch.error] message=$message',
+      error,
+      stackTrace,
+    );
 
     if (error is AnyhowException) {
       if (error.message.contains('Game not found')) {
@@ -320,24 +377,41 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
   }
 
   @override
-  void dispose() {
-    unawaited(_gameEvents?.cancel() ?? Future<void>.value());
-    _gameStatusTimer?.cancel();
-    super.dispose();
+  void dispose() => super.dispose();
+
+  String _titleKey(_MaximaLaunchMode launchMode) {
+    return switch (launchMode) {
+      _MaximaLaunchMode.dedicatedServer => 'maxima.dedicatedLaunching',
+      _MaximaLaunchMode.joinServer => 'maxima.joinLaunching',
+      _MaximaLaunchMode.game => 'maxima.gameLaunching',
+    };
+  }
+
+  String _startingKey(_MaximaLaunchMode launchMode) {
+    return switch (launchMode) {
+      _MaximaLaunchMode.dedicatedServer => 'maxima.startingDedicated',
+      _MaximaLaunchMode.joinServer => 'maxima.startingJoin',
+      _MaximaLaunchMode.game => 'maxima.startingGame',
+    };
+  }
+
+  String _descriptionKey(_MaximaLaunchMode launchMode) {
+    return switch (launchMode) {
+      _MaximaLaunchMode.dedicatedServer =>
+        'maxima.startingDedicatedDescription',
+      _MaximaLaunchMode.joinServer => 'maxima.startingJoinDescription',
+      _MaximaLaunchMode.game => 'maxima.startingGameDescription',
+    };
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    final dedicatedServerRequest = _isDedicatedServerRequest(
+    final launchMode = _launchMode(
       widget.initializeRequest ?? InitializeRequest(),
     );
     return KyberContentDialog(
-      title: Text(
-        dedicatedServerRequest
-            ? l10n.text('maxima.dedicatedLaunching')
-            : l10n.text('maxima.gameLaunching'),
-      ),
+      title: Text(l10n.text(_titleKey(launchMode))),
       constraints: const BoxConstraints(maxWidth: 500, maxHeight: 300),
       content: Column(
         children: [
@@ -359,9 +433,7 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
                 ),
               if (!updating)
                 Text(
-                  dedicatedServerRequest
-                      ? l10n.text('maxima.startingDedicated')
-                      : l10n.text('maxima.startingGame'),
+                  l10n.text(_startingKey(launchMode)),
                   style: FluentTheme.of(context).typography.bodyLarge,
                 ),
             ],
@@ -370,9 +442,7 @@ class _MaximaStartGameDialogState extends State<MaximaStartGameDialog> {
             height: 10,
           ),
           Text(
-            dedicatedServerRequest
-                ? l10n.text('maxima.startingDedicatedDescription')
-                : l10n.text('maxima.startingGameDescription'),
+            l10n.text(_descriptionKey(launchMode)),
             style: FluentTheme.of(context).typography.body?.copyWith(
               color: kWhiteColor,
             ),

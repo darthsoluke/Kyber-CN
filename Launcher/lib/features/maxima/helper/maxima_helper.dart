@@ -39,6 +39,10 @@ class MaximaHelper {
         modData.explodedMods.isNotEmpty;
   }
 
+  static bool _isDirectJoinId(String id) {
+    return id.startsWith('lan:') || id.startsWith('direct:');
+  }
+
   static bool _usesOfflineDirectMode(InitializeRequest? initializeRequest) {
     if (initializeRequest == null) {
       return Platform.environment['KYBER_ONLINE_MODE'] == '0';
@@ -51,7 +55,7 @@ class MaximaHelper {
 
     if (initializeRequest.hasJoinServer()) {
       final joinServer = initializeRequest.joinServer;
-      return joinServer.joinToken.isEmpty && joinServer.id.startsWith('lan:');
+      return joinServer.joinToken.isEmpty && _isDirectJoinId(joinServer.id);
     }
 
     return Platform.environment['KYBER_ONLINE_MODE'] == '0';
@@ -222,6 +226,17 @@ class MaximaHelper {
     final interfacePort = await KyberNetworkHelper.findAvailablePort();
     final offlineDirectMode = _usesOfflineDirectMode(initializeRequest);
     final dedicatedServerMode = _usesDedicatedServerMode(initializeRequest);
+    if (initializeRequest?.hasJoinServer() == true) {
+      final joinServer = initializeRequest!.joinServer;
+      _logger.info(
+        'DIRECT_STAGE[maxima.start_game.join.request] '
+        'id=${joinServer.id} ip=${joinServer.ip}:${joinServer.port} '
+        'type=${joinServer.type.name} '
+        'offlineDirect=$offlineDirectMode '
+        'joinTokenPresent=${joinServer.joinToken.isNotEmpty} '
+        'passwordPresent=${joinServer.password.isNotEmpty}',
+      );
+    }
     final dedicatedCredentials = dedicatedServerMode
         ? await _resolveDedicatedCredentials()
         : null;
@@ -233,6 +248,10 @@ class MaximaHelper {
     }
 
     await maxima.startMaxima(dummyAuthStorage: dedicatedServerMode);
+    _logger.info(
+      'DIRECT_STAGE[maxima.start_game.service.ready] '
+      'dedicated=$dedicatedServerMode offlineDirect=$offlineDirectMode',
+    );
     final instanceService = sl.get<MaximaInstanceService>();
     final runningInstance = instanceService.primaryInstance;
     if (runningInstance != null) {
@@ -287,17 +306,24 @@ class MaximaHelper {
     ProcessEnv.set('KYBER_API_HOSTNAME', kyberService.moduleRpcTarget);
     ProcessEnv.set('KYBER_API_INSECURE', kyberService.isInsecure ? '1' : '0');
     ProcessEnv.set('KYBER_WS_SCHEME', kyberService.webSocketScheme);
-    _logger.info(
-      'LAN_STAGE[maxima.launch.mode] onlineMode=${!offlineDirectMode} '
-      'offlineDirect=$offlineDirectMode '
-      'dedicated=$dedicatedServerMode '
-      'tokenSource=${offlineDirectMode ? offlineTokenSource : 'kyber_api'} '
-      'interfacePort=$interfacePort '
-      'rpcTarget=${kyberService.moduleRpcTarget} '
-      'httpHost=${kyberService.httpHostname} '
-      'insecure=${kyberService.isInsecure} '
-      'wsScheme=${kyberService.webSocketScheme}',
-    );
+    _logger
+      ..info(
+        'LAN_STAGE[maxima.launch.mode] onlineMode=${!offlineDirectMode} '
+        'offlineDirect=$offlineDirectMode '
+        'dedicated=$dedicatedServerMode '
+        'tokenSource=${offlineDirectMode ? offlineTokenSource : 'kyber_api'} '
+        'interfacePort=$interfacePort '
+        'rpcTarget=${kyberService.moduleRpcTarget} '
+        'httpHost=${kyberService.httpHostname} '
+        'insecure=${kyberService.isInsecure} '
+        'wsScheme=${kyberService.webSocketScheme}',
+      )
+      ..info(
+        'DIRECT_STAGE[maxima.start_game.module] '
+        'moduleDirectory=$moduleDirectory moduleVersion=$moduleVersion '
+        'requireModSupport=$requiresModSupport '
+        'disableModLoader=${!_hasConfiguredMods(initializeRequest)}',
+      );
 
     if (_hasConfiguredMods(initializeRequest)) {
       ProcessEnv.delete('KYBER_DISABLE_MODLOADER');
@@ -320,6 +346,12 @@ class MaximaHelper {
     }
 
     final gameClient = ClientGRPCService('127.0.0.1', interfacePort);
+    final launchRole = dedicatedServerMode
+        ? 'BFII host process'
+        : 'BFII client process';
+    _logger.info(
+      'DIRECT_STAGE[maxima.start_game.maxima.start] role=$launchRole',
+    );
     final gamePID = await maxima
         .startGame(
           gameSlug: gameSlug ?? 'star-wars-battlefront-2',
@@ -330,11 +362,16 @@ class MaximaHelper {
         .timeout(
           const Duration(seconds: 90),
           onTimeout: () => throw TimeoutException(
-            'Timed out waiting for Maxima to launch the BFII host process. '
+            'Timed out waiting for Maxima to launch the $launchRole. '
             'No starwarsbattlefrontii.exe process was observed before timeout.',
           ),
         );
-    _logger.info('Started game with PID: $gamePID');
+    _logger
+      ..info('Started game with PID: $gamePID')
+      ..info(
+        'DIRECT_STAGE[maxima.start_game.maxima.done] '
+        'role=$launchRole pid=$gamePID',
+      );
 
     final serverMetadata =
         dedicatedServerMode && initializeRequest?.hasStartServer() == true
@@ -365,13 +402,26 @@ class MaximaHelper {
           'LAN_STAGE[maxima.launch.dedicated.inject_immediate] pid=$gamePID',
         );
       } else {
+        _logger.info(
+          'DIRECT_STAGE[maxima.start_game.license.wait] pid=$gamePID',
+        );
         await maxima
             .lsxGetEventStream(pid: gamePID, isStartup: true)
             .firstWhere((e) => e == 'RequestLicense');
+        _logger.info(
+          'DIRECT_STAGE[maxima.start_game.license.requested] pid=$gamePID',
+        );
       }
+      _logger.info(
+        'DIRECT_STAGE[maxima.start_game.inject.start] '
+        'pid=$gamePID module=${p.join(moduleDirectory, 'Kyber.dll')}',
+      );
       await maxima.injectKyber(
         pid: gamePID,
         path: p.join(moduleDirectory, 'Kyber.dll'),
+      );
+      _logger.info(
+        'DIRECT_STAGE[maxima.start_game.inject.done] pid=$gamePID',
       );
     } catch (e) {
       if (e is AnyhowException) {

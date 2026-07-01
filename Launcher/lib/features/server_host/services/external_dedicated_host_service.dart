@@ -154,6 +154,7 @@ class ExternalDedicatedHostService extends ChangeNotifier {
       firstMap.mode,
       '-LicenseMode',
       launchConfig.licenseMode.value,
+      '-CredentiallessHost',
       '-ReadyTimeoutSeconds',
       '180',
       '-LogStallTimeoutSeconds',
@@ -175,6 +176,7 @@ class ExternalDedicatedHostService extends ChangeNotifier {
 
     final environment = Map<String, String>.from(Platform.environment)
       ..['KYBER_DEDICATED_LICENSE_MODE'] = launchConfig.licenseMode.value
+      ..['KYBER_CREDENTIALLESS_HOST'] = '1'
       ..['KYBER_MAP_ROTATION'] = _encodeMapRotation(mapEntries)
       ..['KYBER_ONLINE_MODE'] = '0'
       ..remove('KYBER_DEDICATED_CREDENTIALS')
@@ -189,8 +191,10 @@ class ExternalDedicatedHostService extends ChangeNotifier {
         status: ExternalDedicatedHostStatus.starting,
         serverName: serverName,
         port: port,
-        logs: const [
+        logs: [
           'Checking for orphaned BFII/Kyber host processes before startup...',
+          'Using passwordless direct host mode; EA passwords are not passed.',
+          'BFII license mode: ${launchConfig.licenseMode.value}.',
           'Starting external BFII host helper...',
         ],
       ),
@@ -198,6 +202,14 @@ class ExternalDedicatedHostService extends ChangeNotifier {
     _emitProgressLine(
       onProgress,
       'Checking for orphaned BFII/Kyber host processes before startup...',
+    );
+    _emitProgressLine(
+      onProgress,
+      'Using passwordless direct host mode; EA passwords are not passed.',
+    );
+    _emitProgressLine(
+      onProgress,
+      'BFII license mode: ${launchConfig.licenseMode.value}.',
     );
     _emitProgressLine(onProgress, 'Starting external BFII host helper...');
 
@@ -298,10 +310,16 @@ class ExternalDedicatedHostService extends ChangeNotifier {
     }
 
     if (exitCode != 0) {
+      final diagnostics = await _collectFailureDiagnostics(
+        runtime: runtime,
+        stdoutLines: stdoutLines,
+        stderrLines: stderrLines,
+      );
       final message = [
         'External BFII host helper exited with code $exitCode.',
-        ...stderrLines,
-        ...stdoutLines.take(20),
+        ..._tail(stderrLines, 80),
+        ..._tail(stdoutLines, 80),
+        ...diagnostics,
       ].where((line) => line.trim().isNotEmpty).join('\n');
       await _stopRuntimeAfterFailedStart(port: port, onProgress: onProgress);
       _setState(
@@ -318,10 +336,16 @@ class ExternalDedicatedHostService extends ChangeNotifier {
       throw ExternalDedicatedHostException(message);
     }
 
+    final diagnostics = await _collectFailureDiagnostics(
+      runtime: runtime,
+      stdoutLines: stdoutLines,
+      stderrLines: stderrLines,
+    );
     final message = [
       'External BFII host helper exited before the ready marker.',
-      ...stderrLines,
-      ...stdoutLines.take(20),
+      ..._tail(stderrLines, 80),
+      ..._tail(stdoutLines, 80),
+      ...diagnostics,
     ].where((line) => line.trim().isNotEmpty).join('\n');
     await _stopRuntimeAfterFailedStart(port: port, onProgress: onProgress);
     _setState(
@@ -553,6 +577,99 @@ class ExternalDedicatedHostService extends ChangeNotifier {
     if (!ready.isCompleted && _lineMarksReadyToReturn(line)) {
       ready.complete(const _HostHelperResult.ready());
     }
+  }
+
+  Future<List<String>> _collectFailureDiagnostics({
+    required DedicatedHostRuntimeLayout runtime,
+    required List<String> stdoutLines,
+    required List<String> stderrLines,
+  }) async {
+    final paths = <String>{};
+    for (final path in [
+      ..._pathsFromLatestMarkers(runtime),
+      ..._pathsFromHelperOutput([...stdoutLines, ...stderrLines]),
+    ]) {
+      final cleanPath = path.trim();
+      if (cleanPath.isEmpty) {
+        continue;
+      }
+      paths.add(p.normalize(cleanPath));
+    }
+
+    final diagnostics = <String>[];
+    for (final path in paths) {
+      final file = File(path);
+      if (!file.existsSync()) {
+        continue;
+      }
+
+      diagnostics
+        ..add('--- ${file.path} ---')
+        ..addAll(await _readTailLines(file, maxLines: 60));
+    }
+
+    return diagnostics;
+  }
+
+  Iterable<String> _pathsFromLatestMarkers(
+    DedicatedHostRuntimeLayout runtime,
+  ) sync* {
+    for (final logDir in [
+      p.join(runtime.rootPath, 'logs'),
+      p.join(runtime.rootPath, 'CLI', 'dev_build', 'one_click_logs'),
+    ]) {
+      for (final markerName in const [
+        'latest.stdout.path',
+        'latest.stderr.path',
+      ]) {
+        final marker = File(p.join(logDir, markerName));
+        if (!marker.existsSync()) {
+          continue;
+        }
+
+        final path = marker.readAsStringSync().trim();
+        if (path.isNotEmpty) {
+          yield path;
+        }
+      }
+    }
+  }
+
+  Iterable<String> _pathsFromHelperOutput(List<String> lines) sync* {
+    final pattern = RegExp(
+      r'([A-Za-z]:\\[^\r\n]+?host_server_\d{8}_\d{6}\.(?:stdout|stderr)\.log)',
+    );
+    for (final line in lines) {
+      for (final match in pattern.allMatches(line)) {
+        final path = match.group(1);
+        if (path != null && path.trim().isNotEmpty) {
+          yield path;
+        }
+      }
+    }
+  }
+
+  Future<List<String>> _readTailLines(
+    File file, {
+    required int maxLines,
+  }) async {
+    try {
+      final lines = await file.readAsLines();
+      return _tail(
+        lines.where((line) => line.trim().isNotEmpty).toList(),
+        maxLines,
+      );
+    } on Object catch (e) {
+      return ['Failed to read ${file.path}: $e'];
+    }
+  }
+
+  List<String> _tail(List<String> lines, int maxLines) {
+    if (lines.length <= maxLines) {
+      return lines;
+    }
+
+    return lines.sublist(lines.length - maxLines);
   }
 
   String? _parsePath(List<String> lines, String prefix) {

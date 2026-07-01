@@ -239,5 +239,5 @@ Remove-TransientArtifacts -Path $OutputDirectory
 
 Write-Host "Launcher shipping directory: $OutputDirectory"
 Write-Host "Dedicated runtime: $runtimeOut"
-Write-Host 'No credentials are bundled. Users configure BFII path and reuse the normal EA/Maxima session inside Launcher settings.'
+Write-Host 'No credentials are bundled. Dedicated host uses passwordless direct mode and refreshes the local BFII license through EA OAuth/Maxima when needed.'
 Write-Host 'Archive disabled. Shipping output is kept as Launcher\build\shipping\windows only.'

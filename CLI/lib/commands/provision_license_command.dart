@@ -8,10 +8,11 @@ class ProvisionLicenseCommand extends Command<int> {
   ProvisionLicenseCommand({required Logger logger}) : _logger = logger {
     argParser
       ..addOption(
-        'credentials',
-        abbr: 'c',
-        help: 'EA/Maxima credentials used once to provision the local license',
-        valueHelp: 'persona:password',
+        'token',
+        help:
+            'Optional EA/Maxima access token. If omitted, the normal OAuth '
+            'session is used.',
+        valueHelp: 'access-token',
       )
       ..addOption(
         'game-path',
@@ -29,28 +30,13 @@ class ProvisionLicenseCommand extends Command<int> {
 
   @override
   String get description =>
-      'Provisions a BFII license into the current Wine prefix.';
+      'Provisions a BFII license through the normal EA OAuth/Maxima session.';
 
   @override
   String get name => 'provision_license';
 
   @override
   Future<int> run() async {
-    final credentials = _resolveCredentials();
-    if (credentials == null) {
-      _logger.err(
-        'credentials are required for license provisioning. '
-        'Pass --credentials or set KYBER_BFII_HOST_CREDENTIALS.',
-      );
-      return ExitCode.usage.code;
-    }
-
-    final split = credentials.split(':');
-    if (split.length != 2 || split.first.isEmpty || split.last.isEmpty) {
-      _logger.err('Invalid credentials format. Use persona:password');
-      return ExitCode.usage.code;
-    }
-
     final gamePath = _resolveRequiredText('game-path', 'KYBER_GAME_PATH');
     if (gamePath == null) {
       return ExitCode.usage.code;
@@ -71,11 +57,22 @@ class ProvisionLicenseCommand extends Command<int> {
     );
 
     try {
-      await startMaxima(dummyAuthStorage: true);
+      await startMaxima(dummyAuthStorage: false);
+      final explicitToken = _resolveToken();
+      if (explicitToken == null) {
+        final player = await loginFlow();
+        _logger.info(
+          'Using EA/Maxima OAuth session for ${player.displayName}.',
+        );
+      } else {
+        await loginWithToken(token: explicitToken);
+        _logger.info('Using explicit EA/Maxima access token.');
+      }
+      final token = explicitToken ?? await getAuthToken();
       await provisionGameLicense(
         gamePath: gamePath,
-        user: split.first,
-        pass: split.last,
+        user: token,
+        pass: '',
         contentId: contentId,
       );
     } catch (e) {
@@ -83,21 +80,17 @@ class ProvisionLicenseCommand extends Command<int> {
       return ExitCode.software.code;
     }
 
-    _logger.success('License provisioned successfully for this Wine prefix.');
+    _logger.success('License provisioned successfully for this machine.');
     return ExitCode.success.code;
   }
 
-  String? _resolveCredentials() {
-    final optionValue = argResults?['credentials'] as String?;
+  String? _resolveToken() {
+    final optionValue = argResults?['token'] as String?;
     if (optionValue != null && optionValue.trim().isNotEmpty) {
       return optionValue.trim();
     }
 
-    for (final name in const [
-      'KYBER_BFII_HOST_CREDENTIALS',
-      'KYBER_DEDICATED_CREDENTIALS',
-      'MAXIMA_CREDENTIALS',
-    ]) {
+    for (final name in const ['KYBER_EA_ACCESS_TOKEN', 'MAXIMA_ACCESS_TOKEN']) {
       final value = Platform.environment[name];
       if (value != null && value.trim().isNotEmpty) {
         return value.trim();

@@ -86,9 +86,9 @@ void Client::AttemptJoinVoip()
         });
 }
 
-static bool IsLanServerId(const std::string& id)
+static bool IsDirectServerId(const std::string& id)
 {
-    return id.rfind("lan:", 0) == 0;
+    return id.rfind("lan:", 0) == 0 || id.rfind("direct:", 0) == 0;
 }
 
 void Client::QueueInitialJoin(
@@ -109,6 +109,10 @@ void Client::QueueInitialJoin(
     KYBER_LOG(Info, "LAN_STAGE[client.initial_join.queued] id=" << id << " ip=" << ip << ":" << port
                                                                  << " passwordPresent=" << !password.empty()
                                                                  << " spectate=" << spectate << " proxied=" << proxied);
+    KYBER_LOG(Info, "DIRECT_STAGE[client.initial_join.queued] id=" << id << " directId=" << IsDirectServerId(id)
+                                                                    << " target=" << ip << ":" << port
+                                                                    << " passwordPresent=" << !password.empty()
+                                                                    << " spectate=" << spectate << " proxied=" << proxied);
 }
 
 void Client::ProcessPendingJoin()
@@ -123,27 +127,39 @@ void Client::ProcessPendingJoin()
     KYBER_LOG(Info, "LAN_STAGE[client.initial_join.process] id=" << m_currentServerId << " ip=" << m_serverIp << ":" << m_serverPort
                                                                   << " spectate=" << m_pendingJoinSpectate
                                                                   << " proxied=" << m_pendingJoinProxied);
+    KYBER_LOG(Info, "DIRECT_STAGE[client.initial_join.process] id=" << m_currentServerId << " directId=" << IsDirectServerId(m_currentServerId)
+                                                                     << " target=" << m_serverIp << ":" << m_serverPort
+                                                                     << " passwordPresent=" << !m_serverPassword.empty()
+                                                                     << " spectate=" << m_pendingJoinSpectate
+                                                                     << " proxied=" << m_pendingJoinProxied);
     JoinServer(m_currentServerId, m_serverIp, m_serverPort, m_serverPassword, m_pendingJoinSpectate, m_pendingJoinProxied, false);
 }
 
 void Client::JoinServer(
     const std::string& id, std::string ip, uint16_t port, const std::string& password, bool spectate, bool proxied, bool changeState)
 {
-    const bool isLanServerId = IsLanServerId(id);
-    KYBER_LOG(Info, "LAN_STAGE[client.join.classify] id=" << id << " isLanId=" << isLanServerId << " ip=" << ip << ":" << port
+    const bool isDirectServerId = IsDirectServerId(id);
+    KYBER_LOG(Info, "LAN_STAGE[client.join.classify] id=" << id << " isDirectId=" << isDirectServerId << " ip=" << ip << ":" << port
                                                            << " passwordPresent=" << !password.empty() << " spectate=" << spectate
                                                            << " proxied=" << proxied << " changeState=" << changeState);
+    KYBER_LOG(Info, "DIRECT_STAGE[client.join.classify] id=" << id << " directId=" << isDirectServerId
+                                                              << " initialTarget=" << ip << ":" << port
+                                                              << " passwordPresent=" << !password.empty() << " spectate=" << spectate
+                                                              << " proxied=" << proxied << " changeState=" << changeState);
 
-    if (!id.empty() && !isLanServerId)
+    if (!id.empty() && !isDirectServerId)
     {
         KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.start] id=" << id);
+        KYBER_LOG(Info, "DIRECT_STAGE[client.join.official_lookup.start] id=" << id);
         auto server = g_program->GetAPI()->GetServerBrowser()->GetServer(id);
         if (!server)
         {
             KYBER_LOG(Error, "LAN_STAGE[client.join.official_lookup.failed] id=" << id);
+            KYBER_LOG(Error, "DIRECT_STAGE[client.join.official_lookup.failed] id=" << id);
             return;
         }
         KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.ok] id=" << id);
+        KYBER_LOG(Info, "DIRECT_STAGE[client.join.official_lookup.ok] id=" << id);
 
         auto meta = server->meta();
         auto proxy_id_it = meta.find("pinned_proxy_id");
@@ -163,14 +179,16 @@ void Client::JoinServer(
     }
     else
     {
-        KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.skip] reason=" << (isLanServerId ? "lan_id" : "empty_id"));
+        KYBER_LOG(Info, "LAN_STAGE[client.join.official_lookup.skip] reason=" << (isDirectServerId ? "direct_id" : "empty_id"));
+        KYBER_LOG(Info, "DIRECT_STAGE[client.join.official_lookup.skip] reason=" << (isDirectServerId ? "direct_id" : "empty_id")
+                                                                                  << " id=" << id);
     }
 
     ClientSettings* clientSettings = Settings<ClientSettings>("Client");
     clientSettings->ServerIp = StringUtils::CopyWithArena(ip);
     KYBER_LOG(Info, "LAN_STAGE[client.join.settings_applied] serverIp=" << ip << " serverPort=" << port);
 
-    const std::string socketServerName = isLanServerId ? "" : id;
+    const std::string socketServerName = isDirectServerId ? "" : id;
     SocketSpawnInfo info(proxied, proxied ? ip : "", socketServerName, "");
     g_program->m_server->m_socketSpawnInfo = info;
     KYBER_LOG(Info, "LAN_STAGE[client.join.socket_info] serverName=" << socketServerName << " proxyAddress=" << (proxied ? ip : "")
@@ -186,8 +204,12 @@ void Client::JoinServer(
                                                << ", Spectate: " << spectate << ", ChangeState: " << changeState << "]");
 
     Settings<NetworkSettings>("Network")->ServerPort = port;
-    KYBER_LOG(Info, "LAN_STAGE[client.join.final] id=" << id << " ip=" << ip << ":" << port << " isLanId=" << isLanServerId
+    KYBER_LOG(Info, "LAN_STAGE[client.join.final] id=" << id << " ip=" << ip << ":" << port << " isDirectId=" << isDirectServerId
                                                         << " onlineMode=" << g_program->m_server->m_onlineMode);
+    KYBER_LOG(Info, "DIRECT_STAGE[client.join.final] id=" << id << " target=" << ip << ":" << port
+                                                           << " directId=" << isDirectServerId
+                                                           << " onlineMode=" << g_program->m_server->m_onlineMode
+                                                           << " changeState=" << changeState);
     if (changeState)
     {
         KYBER_LOG(Info, "LAN_STAGE[client.join.change_state] target=Startup");

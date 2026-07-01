@@ -321,7 +321,11 @@ pub async fn provision_game_license(
     content_id: Option<String>,
 ) -> anyhow::Result<()> {
     let content_id = content_id.unwrap_or_else(|| "1035052".to_string());
-    let auth = LicenseAuth::Direct(user, pass);
+    let auth = if pass.trim().is_empty() {
+        LicenseAuth::AccessToken(user)
+    } else {
+        LicenseAuth::Direct(user, pass)
+    };
     request_and_save_license(&auth, &content_id, PathBuf::from(game_path)).await?;
     Ok(())
 }

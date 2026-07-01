@@ -102,9 +102,14 @@ class DedicatedHostUserConfigService {
   }
 
   DedicatedHostLicenseMode get licenseMode =>
-      DedicatedHostLicenseMode.fromValue(
+      switch (DedicatedHostLicenseMode.fromValue(
         Preferences.hostServer.dedicatedLicenseMode,
-      );
+      )) {
+        // GUI dedicated host must prefer deterministic startup over a faster
+        // stale-license path. Manual scripts still accept -LicenseMode reuse.
+        DedicatedHostLicenseMode.reuse => DedicatedHostLicenseMode.refresh,
+        DedicatedHostLicenseMode.refresh => DedicatedHostLicenseMode.refresh,
+      };
 
   set licenseMode(DedicatedHostLicenseMode value) {
     Preferences.hostServer.dedicatedLicenseMode = value.value;

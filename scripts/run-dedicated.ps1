@@ -43,9 +43,17 @@ $LogDirectory = if (Test-Path -LiteralPath (Join-Path $Root 'CLI') -PathType Con
 $PidFile = Join-Path $LogDirectory 'dedicated_host.pid'
 $LatestStdoutPath = Join-Path $LogDirectory 'latest.stdout.path'
 $LatestStderrPath = Join-Path $LogDirectory 'latest.stderr.path'
-$DefaultCliExe = Join-Path $Root 'CLI\dev_build\cli_bundle\bundle\bin\kyber_cli.exe'
+$DefaultCliExe = Join-Path $Root 'cli_bundle\bundle\bin\kyber_cli.exe'
+if (!(Test-Path -LiteralPath $DefaultCliExe -PathType Leaf)) {
+    $DefaultCliExe = Join-Path $Root 'CLI\dev_build\cli_bundle\bundle\bin\kyber_cli.exe'
+}
 if (!(Test-Path -LiteralPath $DefaultCliExe -PathType Leaf)) {
     $DefaultCliExe = Join-Path $Root 'CLI\build\cli\windows_x64\bundle\bin\kyber_cli.exe'
+}
+
+$DefaultModulePath = Join-Path $Root 'module_runtime'
+if (!(Test-Path -LiteralPath $DefaultModulePath -PathType Container)) {
+    $DefaultModulePath = Join-Path $Root 'CLI\dev_build\module_runtime'
 }
 
 function Get-Setting {
@@ -137,6 +145,108 @@ function Resolve-ExistingPath {
     param([string]$Path)
 
     return (Resolve-Path -LiteralPath $Path).Path
+}
+
+function Quote-PowerShellArgument {
+    param([string]$Value)
+
+    return "'" + $Value.Replace("'", "''") + "'"
+}
+
+function Test-IsAdministrator {
+    try {
+        $identity = [Security.Principal.WindowsIdentity]::GetCurrent()
+        $principal = [Security.Principal.WindowsPrincipal]::new($identity)
+        return $principal.IsInRole([Security.Principal.WindowsBuiltInRole]::Administrator)
+    } catch {
+        return $false
+    }
+}
+
+function Copy-FileElevated {
+    param(
+        [string]$Source,
+        [string]$Destination
+    )
+
+    $tempScript = Join-Path ([IO.Path]::GetTempPath()) "kyber-install-vivox-$PID.ps1"
+    @'
+param(
+    [string]$Source,
+    [string]$Destination
+)
+
+$ErrorActionPreference = 'Stop'
+Copy-Item -LiteralPath $Source -Destination $Destination -Force
+'@ | Set-Content -LiteralPath $tempScript -Encoding ascii
+
+    try {
+        $argumentList = @(
+            '-NoProfile',
+            '-ExecutionPolicy',
+            'Bypass',
+            '-File',
+            (Quote-PowerShellArgument $tempScript),
+            '-Source',
+            (Quote-PowerShellArgument $Source),
+            '-Destination',
+            (Quote-PowerShellArgument $Destination)
+        ) -join ' '
+
+        $process = Start-Process `
+            -FilePath 'powershell.exe' `
+            -ArgumentList $argumentList `
+            -Verb RunAs `
+            -Wait `
+            -PassThru
+
+        if ($process.ExitCode -ne 0) {
+            throw "elevated copy exited with code $($process.ExitCode)"
+        }
+    } finally {
+        Remove-Item -LiteralPath $tempScript -Force -ErrorAction SilentlyContinue
+    }
+}
+
+function Ensure-BfiiVivoxRuntime {
+    param(
+        [string]$GamePath,
+        [string]$ModulePath
+    )
+
+    $source = Join-Path $ModulePath 'vivoxsdk.dll'
+    $target = Join-Path (Split-Path -Parent $GamePath) 'vivoxsdk.dll'
+
+    if (Test-Path -LiteralPath $target -PathType Leaf) {
+        Write-Host "BFII Vivox runtime: present at $target"
+        return
+    }
+
+    Write-Host "BFII Vivox runtime: missing at $target"
+    Write-Host 'Installing BFII Vivox runtime dependency before host startup...'
+
+    try {
+        Copy-Item -LiteralPath $source -Destination $target -Force
+        Write-Host "Installed BFII Vivox runtime: $target"
+        return
+    } catch {
+        if (Test-IsAdministrator) {
+            throw "Failed to install BFII Vivox runtime to $target. $($_.Exception.Message)"
+        }
+    }
+
+    Write-Host 'BFII install directory requires administrator permission. Requesting UAC for one-time runtime install...' -ForegroundColor Yellow
+    try {
+        Copy-FileElevated -Source $source -Destination $target
+    } catch {
+        Exit-WithError "Failed to install BFII Vivox runtime to $target. Approve the UAC prompt, run Kyber Launcher as Administrator once, or install BFII outside Program Files. $($_.Exception.Message)"
+    }
+
+    if (!(Test-Path -LiteralPath $target -PathType Leaf)) {
+        Exit-WithError "BFII Vivox runtime was not installed: $target"
+    }
+
+    Write-Host "Installed BFII Vivox runtime: $target"
 }
 
 function Require-Port {
@@ -242,26 +352,126 @@ function Get-LastNonEmptyLogLine {
     return ''
 }
 
+function Test-LogLineIsNoise {
+    param([string]$Line)
+
+    if ([string]::IsNullOrWhiteSpace($Line)) {
+        return $true
+    }
+
+    $trimmed = $Line.Trim()
+    if ($trimmed -eq '<asynchronous suspension>') {
+        return $true
+    }
+
+    if ($trimmed -match '^#\d+\s+' -or $trimmed -match '^\s*at\s+') {
+        return $true
+    }
+
+    if ($trimmed -match '^\s*\+\s*(CategoryInfo|FullyQualifiedErrorId)\s*:') {
+        return $true
+    }
+
+    if ($trimmed -match '^~{8,}$') {
+        return $true
+    }
+
+    if ($trimmed -match '^(Stack backtrace|note: run with|See also|Unhandled exception:)$') {
+        return $true
+    }
+
+    return $false
+}
+
+function Get-MeaningfulLogLines {
+    param(
+        [string[]]$Paths,
+        [int]$Tail = 120
+    )
+
+    $result = [System.Collections.Generic.List[string]]::new()
+    foreach ($path in $Paths) {
+        if (!(Test-Path -LiteralPath $path -PathType Leaf)) {
+            continue
+        }
+
+        $lines = Get-Content -LiteralPath $path -Tail $Tail -ErrorAction SilentlyContinue
+        foreach ($line in $lines) {
+            if (Test-LogLineIsNoise $line) {
+                continue
+            }
+
+            $result.Add($line.Trim())
+        }
+    }
+
+    return $result.ToArray()
+}
+
+function Write-StartupFailureDiagnostics {
+    param(
+        [string]$StdoutPath,
+        [string]$StderrPath
+    )
+
+    Write-Host "Startup stdout log: $StdoutPath"
+    Write-Host "Startup stderr log: $StderrPath"
+
+    $stderrLines = Get-MeaningfulLogLines -Paths @($StderrPath) -Tail 160 |
+        Select-Object -Last 16
+    $stdoutLines = Get-MeaningfulLogLines -Paths @($StdoutPath) -Tail 160 |
+        Select-Object -Last 16
+
+    if ($stderrLines) {
+        Write-Host 'Startup stderr tail:'
+        foreach ($line in $stderrLines) {
+            Write-Host "  $line"
+        }
+    }
+
+    if ($stdoutLines) {
+        Write-Host 'Startup stdout tail:'
+        foreach ($line in $stdoutLines) {
+            Write-Host "  $line"
+        }
+    }
+}
+
 function Get-StartupFailureSummary {
     param(
         [string]$StdoutPath,
         [string]$StderrPath
     )
 
-    if (Test-Path -LiteralPath $StderrPath -PathType Leaf) {
-        $stderr = Get-Content -LiteralPath $StderrPath -Raw -ErrorAction SilentlyContinue
-        if (![string]::IsNullOrWhiteSpace($stderr)) {
-            if ($stderr -match '<error code="([^"]+)"') {
-                return "EA license request failed: $($Matches[1])"
-            }
+    $rawStderr = if (Test-Path -LiteralPath $StderrPath -PathType Leaf) {
+        Get-Content -LiteralPath $StderrPath -Raw -ErrorAction SilentlyContinue
+    } else {
+        ''
+    }
+    if ($rawStderr -match '<error code="([^"]+)"') {
+        return "EA license request failed: $($Matches[1])"
+    }
 
-            $oneLine = (($stderr -replace "`r?`n", ' ') -replace '\s+', ' ').Trim()
-            if ($oneLine.Length -gt 360) {
-                return $oneLine.Substring(0, 360) + '...'
-            }
-
-            return $oneLine
+    $stderrMeaningful = Get-MeaningfulLogLines -Paths @($StderrPath) -Tail 160
+    if ($stderrMeaningful -and $stderrMeaningful.Count -gt 0) {
+        $selected = $stderrMeaningful | Select-Object -Last 8
+        $oneLine = (($selected -join ' | ') -replace '\s+', ' ').Trim()
+        if ($oneLine.Length -gt 720) {
+            return $oneLine.Substring(0, 720) + '...'
         }
+
+        return $oneLine
+    }
+
+    $stdoutMeaningful = Get-MeaningfulLogLines -Paths @($StdoutPath) -Tail 160
+    if ($stdoutMeaningful -and $stdoutMeaningful.Count -gt 0) {
+        $selected = $stdoutMeaningful | Select-Object -Last 8
+        $oneLine = (($selected -join ' | ') -replace '\s+', ' ').Trim()
+        if ($oneLine.Length -gt 720) {
+            return $oneLine.Substring(0, 720) + '...'
+        }
+
+        return $oneLine
     }
 
     return Get-LastNonEmptyLogLine -Paths @($StdoutPath)
@@ -718,6 +928,7 @@ function Wait-ForDedicatedReady {
 
         if ($Process.HasExited) {
             $summary = Get-StartupFailureSummary -StdoutPath $StdoutPath -StderrPath $StderrPath
+            Write-StartupFailureDiagnostics -StdoutPath $StdoutPath -StderrPath $StderrPath
             throw "Dedicated server process exited before readiness. Last error: $summary. See $StdoutPath and $StderrPath."
         }
 
@@ -733,6 +944,7 @@ function Wait-ForDedicatedReady {
                 throw "Maxima service installation stalled for $StallTimeoutSeconds seconds. Accept the Windows UAC prompt, run Kyber Launcher as Administrator once, or stop the stale MaximaBackgroundService before retrying. See $StdoutPath and $StderrPath."
             }
 
+            Write-StartupFailureDiagnostics -StdoutPath $StdoutPath -StderrPath $StderrPath
             throw "Dedicated server startup stalled for $StallTimeoutSeconds seconds with no new log output. Last log line: $lastLine. See $StdoutPath and $StderrPath."
         }
 
@@ -758,6 +970,7 @@ function Wait-ForDedicatedReady {
         }
     }
 
+    Write-StartupFailureDiagnostics -StdoutPath $StdoutPath -StderrPath $StderrPath
     throw "Dedicated server was not ready after $TimeoutSeconds seconds. See $StdoutPath and $StderrPath."
 }
 
@@ -790,10 +1003,10 @@ function Start-DedicatedServerProcess {
 }
 
 $GamePath = Get-Setting $GamePath 'KYBER_GAME_PATH' 'D:\Games\STAR WARS Battlefront II\starwarsbattlefrontii.exe'
-$ModulePath = Get-Setting $ModulePath 'KYBER_MODULE_DIR' (Join-Path $Root 'CLI\dev_build\module_runtime')
+$ModulePath = Get-Setting $ModulePath 'KYBER_MODULE_DIR' $DefaultModulePath
 $CliExe = Get-Setting $CliExe 'KYBER_CLI_EXE' $DefaultCliExe
 $Credentials = Get-Setting $Credentials 'KYBER_DEDICATED_CREDENTIALS' ''
-$LicenseMode = Get-Setting $LicenseMode 'KYBER_DEDICATED_LICENSE_MODE' 'reuse'
+$LicenseMode = Get-Setting $LicenseMode 'KYBER_DEDICATED_LICENSE_MODE' 'refresh'
 $DenuvoToken = Get-Setting $DenuvoToken 'KYBER_DEDICATED_DENUVO_TOKEN' ''
 $CredentiallessHost = Get-BoolSetting $CredentiallessHost.IsPresent 'KYBER_CREDENTIALLESS_HOST'
 $ServerAddress = Get-Setting $ServerAddress 'KYBER_SERVER_ADDRESS' ''
@@ -928,6 +1141,7 @@ if ($Action -eq 'Host') {
 
 if ($Action -eq 'Host') {
     Assert-NoInitialGameProcess 'dedicated server' -Port $ServerPort -AllowCleanup $CleanupOrphans.IsPresent
+    Ensure-BfiiVivoxRuntime -GamePath $GamePath -ModulePath $ModulePath
     Stop-MaximaService
 } elseif ($Action -eq 'Join') {
     Assert-NoInitialGameProcess 'player client' -Port $ServerPort -AllowCleanup $CleanupOrphans.IsPresent
