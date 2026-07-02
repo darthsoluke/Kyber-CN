@@ -70,6 +70,62 @@ class LanServerDiscoveryService {
     return server;
   }
 
+  Future<Server> discoverPublicAddress({
+    required String host,
+    required int? gamePort,
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    if (gamePort == null) {
+      return discoverHost(host: host, timeout: timeout);
+    }
+
+    final metadataPorts = _candidateMetadataPorts(gamePort);
+    StackTrace? lastStackTrace;
+
+    _logger.info(
+      'DIRECT_STAGE[discovery.public.start] '
+      'host=$host gamePort=$gamePort metadataCandidates=$metadataPorts '
+      'timeoutMs=${timeout.inMilliseconds}',
+    );
+
+    for (final metadataPort in metadataPorts) {
+      try {
+        final server = await discoverExternalEndpoint(
+          host: host,
+          metadataPort: metadataPort,
+          gamePort: gamePort,
+          source: 'direct_public_query',
+          timeout: timeout,
+        );
+        _logger.info(
+          'DIRECT_STAGE[discovery.public.accepted] '
+          'host=$host metadataPort=$metadataPort gamePort=$gamePort '
+          'serverId=${server.id}',
+        );
+        return server;
+      } on Object catch (error, stackTrace) {
+        lastStackTrace = stackTrace;
+        _logger
+          ..warning(
+            'DIRECT_STAGE[discovery.public.candidate_failed] '
+            'host=$host metadataPort=$metadataPort gamePort=$gamePort '
+            'error=$error',
+          )
+          ..finer(stackTrace.toString());
+      }
+    }
+
+    Error.throwWithStackTrace(
+      StateError(
+        'No KYBER metadata response for $host:$gamePort. If this is a '
+        'SakuraFRP server, ask the host to expose a second UDP metadata '
+        'tunnel to local port $discoveryPort, preferably using the game '
+        'public port plus or minus 1.',
+      ),
+      lastStackTrace ?? StackTrace.current,
+    );
+  }
+
   Future<Server> discoverHost({
     required String host,
     Duration timeout = const Duration(seconds: 2),
@@ -102,6 +158,61 @@ class LanServerDiscoveryService {
     return server;
   }
 
+  List<int> _candidateMetadataPorts(int gamePort) {
+    final candidates = <int>[
+      discoveryPort,
+      gamePort + 1,
+      gamePort - 1,
+      gamePort,
+    ];
+    return candidates
+        .where((port) => port > 0 && port <= 65535)
+        .fold<List<int>>(
+          <int>[],
+          (unique, port) => unique.contains(port) ? unique : [...unique, port],
+        );
+  }
+
+  Future<Server> discoverExternalEndpoint({
+    required String host,
+    required int metadataPort,
+    required int gamePort,
+    required String source,
+    Duration timeout = const Duration(seconds: 2),
+  }) async {
+    _logger.info(
+      'SAKURA_STAGE[discovery.endpoint.start] '
+      'host=$host metadataPort=$metadataPort gamePort=$gamePort '
+      'source=$source timeoutMs=${timeout.inMilliseconds}',
+    );
+
+    final target = await _resolveTarget(host);
+    final servers = await _collectResponses(
+      targets: [_ProbeTarget(target, metadataPort)],
+      timeout: timeout,
+      mode: _DiscoveryMode.endpoint,
+      externalAddress: host,
+      externalGamePort: gamePort,
+      externalStage: source,
+    );
+
+    if (servers.isEmpty) {
+      throw StateError(
+        'No KYBER metadata response from SakuraFRP endpoint '
+        '$host:$metadataPort. Expose UDP $discoveryPort through SakuraFRP '
+        'and keep the BFII host-server process running.',
+      );
+    }
+
+    final server = servers.first;
+    _logger.info(
+      'SAKURA_STAGE[discovery.endpoint.finished] '
+      'id=${server.id} ip=${server.ip} port=${server.port} '
+      'mods=${server.mods.length}',
+    );
+    return server;
+  }
+
   Future<InternetAddress> _resolveTarget(String host) async {
     final addresses = await InternetAddress.lookup(host);
     for (final address in addresses) {
@@ -117,6 +228,9 @@ class LanServerDiscoveryService {
     required List<_ProbeTarget> targets,
     required Duration timeout,
     required _DiscoveryMode mode,
+    String? externalAddress,
+    int? externalGamePort,
+    String externalStage = 'direct',
   }) async {
     RawDatagramSocket? socket;
     StreamSubscription<RawSocketEvent>? subscription;
@@ -167,7 +281,17 @@ class LanServerDiscoveryService {
             }
 
             final server = mode == _DiscoveryMode.endpoint
-                ? _factory.fromDirectMetadata(decoded, datagram.address.address)
+                ? externalAddress == null || externalGamePort == null
+                      ? _factory.fromDirectMetadata(
+                          decoded,
+                          datagram.address.address,
+                        )
+                      : _factory.fromExternalMetadata(
+                          decoded,
+                          address: externalAddress,
+                          gamePort: externalGamePort,
+                          stage: externalStage,
+                        )
                 : _factory.fromDiscovery(decoded, datagram.address.address);
             _registry.remember(server);
             final existing = discovered[server.id];

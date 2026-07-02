@@ -1,14 +1,21 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/services.dart';
+import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
 import 'package:form_builder_validators/form_builder_validators.dart';
 import 'package:kyber_launcher/core/i18n/localization.dart';
+import 'package:kyber_launcher/core/services/app_settings.dart';
 import 'package:kyber_launcher/core/services/notification_service.dart';
 import 'package:kyber_launcher/features/maxima/models/maxima_game_instance.dart';
+import 'package:kyber_launcher/features/maxima/providers/maxima_cubit.dart';
 import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
+import 'package:kyber_launcher/features/server_browser/dialogs/sakura_frp_setup_dialog.dart';
+import 'package:kyber_launcher/features/server_host/dialogs/dedicated_host_setup_dialog.dart';
+import 'package:kyber_launcher/features/server_host/services/dedicated_host_user_config_service.dart';
 import 'package:kyber_launcher/features/server_host/services/dedicated_server_network_service.dart';
 import 'package:kyber_launcher/features/server_host/services/external_dedicated_host_service.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/server_settings_box.dart';
+import 'package:kyber_launcher/features/server_moderation/providers/moderation_cubit.dart';
 import 'package:kyber_launcher/injection_container.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
 import 'package:super_sliver_list/super_sliver_list.dart';
@@ -24,7 +31,8 @@ class ServerSettings extends StatelessWidget {
 
     return SuperListView(
       children: [
-        if (lanOnly) const _BfiiHostControlPanel(),
+        const _HostEnvironmentSettings(),
+        if (lanOnly) const BfiiHostControlPanel(),
         KyberSectionDropdown(
           initialExpanded: true,
           title: l10n.text('host.server.section'),
@@ -179,8 +187,220 @@ class ServerSettings extends StatelessWidget {
   }
 }
 
-class _BfiiHostControlPanel extends StatelessWidget {
-  const _BfiiHostControlPanel();
+class _HostEnvironmentSettings extends StatefulWidget {
+  const _HostEnvironmentSettings();
+
+  @override
+  State<_HostEnvironmentSettings> createState() =>
+      _HostEnvironmentSettingsState();
+}
+
+class _HostEnvironmentSettingsState extends State<_HostEnvironmentSettings> {
+  Future<void> _requestMaximaLogin(BuildContext context) async {
+    try {
+      await context.read<MaximaCubit>().requestLogin();
+      if (!context.mounted) {
+        return;
+      }
+
+      NotificationService.success(
+        message: context.l10n.text('host.environmentNetwork.maximaLoginDone'),
+      );
+    } on Object catch (error) {
+      if (!context.mounted) {
+        return;
+      }
+
+      NotificationService.error(
+        title: context.l10n.text('host.environmentNetwork.maximaLoginFailed'),
+        message: error.toString(),
+      );
+    }
+  }
+
+  Future<void> _openDedicatedHostSetup(BuildContext context) async {
+    await showKyberDialog<bool>(
+      context: context,
+      builder: (_) => const DedicatedHostSetupDialog(),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  Future<void> _openSakuraFrpSetup(BuildContext context) async {
+    await showKyberDialog<bool>(
+      context: context,
+      builder: (_) => const SakuraFrpSetupDialog(),
+    );
+    if (mounted) {
+      setState(() {});
+    }
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final l10n = context.l10n;
+    final configService = sl.get<DedicatedHostUserConfigService>();
+
+    return KyberSectionDropdown(
+      initialExpanded: true,
+      title: l10n.text('host.environmentNetwork.section'),
+      child: KyberTable(
+        itemStyle: const TextStyle(fontSize: 17),
+        items: [
+          KyberTableItem.custom(
+            title: l10n.text('host.environmentNetwork.maximaAccount'),
+            builder: (_) => BlocBuilder<MaximaCubit, MaximaState>(
+              builder: (context, state) {
+                final busy =
+                    state.status == MaximaStatus.loading ||
+                    state.status == MaximaStatus.starting;
+                final status = _maximaStatusText(context, state);
+                return Row(
+                  mainAxisAlignment: MainAxisAlignment.end,
+                  children: [
+                    Flexible(
+                      child: Text(
+                        status,
+                        textAlign: TextAlign.right,
+                        overflow: TextOverflow.ellipsis,
+                        style: TextStyle(
+                          color: state.loggedIn ? Colors.green : Colors.orange,
+                          fontWeight: FontWeight.w700,
+                        ),
+                      ),
+                    ),
+                    const SizedBox(width: 10),
+                    KyberButton(
+                      text: busy
+                          ? l10n.text(
+                              'host.environmentNetwork.maximaLoggingIn',
+                            )
+                          : state.loggedIn
+                          ? l10n.text('host.environmentNetwork.maximaRelogin')
+                          : l10n.text('host.environmentNetwork.maximaLogin'),
+                      onPressed: busy
+                          ? null
+                          : () => _requestMaximaLogin(context),
+                    ),
+                  ],
+                );
+              },
+            ),
+          ),
+          KyberTableItem.button(
+            title: l10n.text('host.environmentNetwork.dedicatedHost'),
+            text: l10n.text('common.settings'),
+            onClick: () => _openDedicatedHostSetup(context),
+          ),
+          KyberTableItem.custom(
+            title: l10n.text('host.environmentNetwork.dedicatedStatus'),
+            builder: (_) => FutureBuilder<List<String>>(
+              future: configService.missingLaunchRequirements(),
+              builder: (context, snapshot) {
+                final missing = snapshot.data ?? const <String>[];
+                final ready =
+                    snapshot.connectionState == ConnectionState.done &&
+                    missing.isEmpty;
+                return Text(
+                  ready
+                      ? l10n.text('host.environmentNetwork.ready')
+                      : l10n.text('host.environmentNetwork.needsSetup'),
+                  textAlign: TextAlign.right,
+                  style: TextStyle(
+                    color: ready ? Colors.green : Colors.orange,
+                    fontWeight: FontWeight.w700,
+                  ),
+                );
+              },
+            ),
+          ),
+          KyberTableItem.button(
+            title: l10n.text('host.environmentNetwork.sakuraFrp'),
+            text: l10n.text('common.settings'),
+            onClick: () => _openSakuraFrpSetup(context),
+          ),
+          KyberTableItem.custom(
+            title: l10n.text('host.environmentNetwork.sakuraFrpStatus'),
+            builder: (_) => Text(
+              _sakuraFrpStatus(context),
+              textAlign: TextAlign.right,
+              style: TextStyle(
+                color: Preferences.sakuraFrp.enabled
+                    ? Colors.green
+                    : Colors.orange,
+                fontWeight: FontWeight.w700,
+              ),
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+
+  String _maximaStatusText(BuildContext context, MaximaState state) {
+    final l10n = context.l10n;
+    if (state.loggedIn) {
+      return l10n.text(
+        'host.environmentNetwork.maximaLoggedIn',
+        params: {
+          'name':
+              state.servicePlayer?.displayName ??
+              state.servicePlayer?.uniqueName ??
+              '',
+        },
+      );
+    }
+
+    if (state.status == MaximaStatus.loading ||
+        state.status == MaximaStatus.starting) {
+      return l10n.text('host.environmentNetwork.maximaLoggingIn');
+    }
+
+    if (state.status == MaximaStatus.error) {
+      return l10n.text('host.environmentNetwork.maximaError');
+    }
+
+    return l10n.text('host.environmentNetwork.maximaNotLoggedIn');
+  }
+
+  String _sakuraFrpStatus(BuildContext context) {
+    final l10n = context.l10n;
+    if (!Preferences.sakuraFrp.enabled) {
+      return l10n.text('host.environmentNetwork.disabled');
+    }
+
+    final endpointCount =
+        _endpointCount(
+          Preferences.sakuraFrp.manualEndpoints,
+        ) +
+        _endpointCount(Preferences.sakuraFrp.cachedEndpoints);
+    if (endpointCount == 0 && Preferences.sakuraFrp.apiToken.trim().isEmpty) {
+      return l10n.text('host.environmentNetwork.needsSetup');
+    }
+
+    return l10n.text(
+      'host.environmentNetwork.sakuraFrpReady',
+      params: {'count': endpointCount},
+    );
+  }
+
+  int _endpointCount(String value) {
+    return value
+        .split(RegExp(r'[\r\n]+'))
+        .where((line) => line.trim().isNotEmpty && !line.trim().startsWith('#'))
+        .length;
+  }
+}
+
+class BfiiHostControlPanel extends StatelessWidget {
+  const BfiiHostControlPanel({
+    this.showOpenPanelButton = true,
+    super.key,
+  });
+
+  final bool showOpenPanelButton;
 
   @override
   Widget build(BuildContext context) {
@@ -195,6 +415,7 @@ class _BfiiHostControlPanel extends StatelessWidget {
           return _ExternalBfiiHostControlPanel(
             service: externalService,
             state: externalState,
+            showOpenPanelButton: showOpenPanelButton,
           );
         }
 
@@ -239,23 +460,43 @@ class _BfiiHostControlPanel extends StatelessWidget {
                     const SizedBox(height: 8),
                     _DedicatedServerMetadata(server: server),
                     const SizedBox(height: 10),
-                    Align(
-                      alignment: Alignment.centerRight,
-                      child: KyberButton(
-                        text: l10n.text('host.dedicatedControl.stop'),
-                        onPressed: () async {
-                          try {
-                            await instanceService.stopBfiiHostServer();
-                            NotificationService.info(
-                              message: l10n.text(
-                                'host.dedicatedControl.stopped',
-                              ),
-                            );
-                          } on Object catch (e) {
-                            NotificationService.error(message: '$e');
-                          }
-                        },
-                      ),
+                    Row(
+                      mainAxisAlignment: MainAxisAlignment.end,
+                      children: [
+                        if (showOpenPanelButton) ...[
+                          KyberButton(
+                            text: l10n.text('host.dedicatedControl.openPanel'),
+                            onPressed: () async {
+                              try {
+                                await context
+                                    .read<ModerationCubit>()
+                                    .selectServer();
+                              } on Object catch (e) {
+                                NotificationService.error(message: '$e');
+                              }
+                            },
+                          ),
+                          const SizedBox(width: 8),
+                        ],
+                        KyberButton(
+                          text: l10n.text('host.dedicatedControl.stop'),
+                          onPressed: () async {
+                            try {
+                              await instanceService.stopBfiiHostServer();
+                              if (context.mounted) {
+                                context.read<ModerationCubit>().unloadServer();
+                              }
+                              NotificationService.info(
+                                message: l10n.text(
+                                  'host.dedicatedControl.stopped',
+                                ),
+                              );
+                            } on Object catch (e) {
+                              NotificationService.error(message: '$e');
+                            }
+                          },
+                        ),
+                      ],
                     ),
                   ],
                 ),
@@ -272,10 +513,12 @@ class _ExternalBfiiHostControlPanel extends StatelessWidget {
   const _ExternalBfiiHostControlPanel({
     required this.service,
     required this.state,
+    required this.showOpenPanelButton,
   });
 
   final ExternalDedicatedHostService service;
   final ExternalDedicatedHostState state;
+  final bool showOpenPanelButton;
 
   @override
   Widget build(BuildContext context) {
@@ -314,25 +557,44 @@ class _ExternalBfiiHostControlPanel extends StatelessWidget {
             const SizedBox(height: 10),
             _ExternalHostLogs(logs: state.logs),
             const SizedBox(height: 10),
-            Align(
-              alignment: Alignment.centerRight,
-              child: KyberButton(
-                text: l10n.text('host.dedicatedControl.stop'),
-                onPressed: canStop
-                    ? () async {
-                        try {
-                          await service.stop();
-                          NotificationService.info(
-                            message: l10n.text(
-                              'host.dedicatedControl.stopped',
-                            ),
-                          );
-                        } on Object catch (e) {
-                          NotificationService.error(message: '$e');
-                        }
+            Row(
+              mainAxisAlignment: MainAxisAlignment.end,
+              children: [
+                if (showOpenPanelButton &&
+                    state.status == ExternalDedicatedHostStatus.running) ...[
+                  KyberButton(
+                    text: l10n.text('host.dedicatedControl.openPanel'),
+                    onPressed: () async {
+                      try {
+                        await context.read<ModerationCubit>().selectServer();
+                      } on Object catch (e) {
+                        NotificationService.error(message: '$e');
                       }
-                    : null,
-              ),
+                    },
+                  ),
+                  const SizedBox(width: 8),
+                ],
+                KyberButton(
+                  text: l10n.text('host.dedicatedControl.stop'),
+                  onPressed: canStop
+                      ? () async {
+                          try {
+                            await service.stop();
+                            if (context.mounted) {
+                              context.read<ModerationCubit>().unloadServer();
+                            }
+                            NotificationService.info(
+                              message: l10n.text(
+                                'host.dedicatedControl.stopped',
+                              ),
+                            );
+                          } on Object catch (e) {
+                            NotificationService.error(message: '$e');
+                          }
+                        }
+                      : null,
+                ),
+              ],
             ),
           ],
         ),

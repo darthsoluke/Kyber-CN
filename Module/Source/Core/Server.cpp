@@ -354,11 +354,24 @@ void Server::Start(const ServerCreationInfo& info, bool changeState)
 
 void Server::KickPlayer(ServerPlayer* player, const char* reason)
 {
+    if (player == nullptr)
+    {
+        return;
+    }
+
+    const std::string playerName = player->m_name;
+    const uint64_t playerId = player->m_onlineId.m_nativeData;
     ServerConnection* serverConnection = GetServerGameContext()->serverPeer->GetConnectionForPlayer(player);
+    if (serverConnection == nullptr)
+    {
+        KYBER_LOG(Error, "Failed to kick " << playerName << " (" << playerId << "): no server connection");
+        return;
+    }
+
     serverConnection->SafeDisconnect(reason, SecureReason_KickedByAdmin);
 
     SendConsoleMessage(
-        "Kicked " + std::string(player->m_name) + " (" + std::to_string(player->m_onlineId.m_nativeData) + ") from the server");
+        "Kicked " + playerName + " (" + std::to_string(playerId) + ") from the server");
 }
 
 void Server::LoadNextLevel(

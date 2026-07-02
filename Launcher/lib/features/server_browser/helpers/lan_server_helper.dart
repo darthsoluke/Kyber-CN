@@ -43,14 +43,19 @@ class LanServerHelper {
 
   static Future<Server> directConnect({
     required String address,
-    required int port,
+    required int? port,
     bool requiresPassword = false,
   }) async {
-    final server = await _discovery.discoverEndpoint(
+    final server = await _discovery.discoverPublicAddress(
       host: address,
-      expectedGamePort: port,
-      requiresPasswordOverride: requiresPassword,
+      gamePort: port,
     );
+    if (requiresPassword && !server.requiresPassword) {
+      throw StateError(
+        'Direct connect marked the server as password protected, but the '
+        'dedicated metadata says it does not require a password.',
+      );
+    }
     remember(server);
     return server;
   }

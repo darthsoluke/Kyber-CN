@@ -1,4 +1,5 @@
 import 'dart:async';
+import 'dart:io';
 
 import 'package:file_picker/file_picker.dart';
 import 'package:fluent_ui/fluent_ui.dart';
@@ -91,14 +92,25 @@ class _DedicatedHostSetupDialogState extends State<DedicatedHostSetupDialog> {
                   _InfoPanel(
                     title: l10n.text('settings.dedicatedHost.authSession'),
                     body: l10n.text('settings.dedicatedHost.authSessionHint'),
-                    action: _hasCredentials
-                        ? KyberButton(
+                    action: Wrap(
+                      spacing: 10,
+                      runSpacing: 8,
+                      children: [
+                        KyberButton(
+                          text: l10n.text(
+                            'settings.dedicatedHost.clearEaSession',
+                          ),
+                          onPressed: _saving ? null : _clearEaSession,
+                        ),
+                        if (_hasCredentials)
+                          KyberButton(
                             text: l10n.text(
                               'settings.dedicatedHost.clearLegacyCredentials',
                             ),
                             onPressed: _saving ? null : _clearCredentials,
-                          )
-                        : null,
+                          ),
+                      ],
+                    ),
                   ),
                   const SizedBox(height: 12),
                   _InputLabel(
@@ -308,6 +320,23 @@ class _DedicatedHostSetupDialogState extends State<DedicatedHostSetupDialog> {
     setState(() {
       _hasCredentials = false;
       _message = null;
+    });
+  }
+
+  void _clearEaSession() {
+    final authPath =
+        '${Platform.environment['APPDATA']}\\ArmchairDevelopers\\Maxima\\data\\auth.toml';
+    final authFile = File(authPath);
+    if (authFile.existsSync()) {
+      authFile.deleteSync();
+    }
+
+    if (!mounted) {
+      return;
+    }
+
+    setState(() {
+      _message = context.l10n.text('settings.dedicatedHost.eaSessionCleared');
     });
   }
 

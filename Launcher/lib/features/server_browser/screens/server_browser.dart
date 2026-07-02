@@ -376,7 +376,7 @@ class _LanControls extends StatelessWidget {
         ),
         const SizedBox(width: 10),
         KyberButton(
-          text: l10n.text('common.refresh'),
+          text: l10n.text('serverBrowser.scanAddress'),
           onPressed: () => context.read<LanServerListCubit>().loadServers(),
         ),
         const SizedBox(width: 10),

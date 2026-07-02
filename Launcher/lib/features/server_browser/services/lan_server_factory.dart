@@ -52,6 +52,22 @@ class LanServerFactory {
     );
   }
 
+  Server fromExternalMetadata(
+    Map<String, dynamic> data, {
+    required String address,
+    required int gamePort,
+    required String stage,
+  }) {
+    return _fromMetadataPayload(
+      data,
+      resolvedAddress: address,
+      sourceAddress: address,
+      stage: stage,
+      advertisedAddress: address,
+      portOverride: gamePort,
+    );
+  }
+
   Server fromDiscovery(Map<String, dynamic> data, String address) {
     final advertisedAddress = (data['address'] as String?)?.trim();
     final resolvedAddress =
@@ -73,12 +89,15 @@ class LanServerFactory {
     required String sourceAddress,
     required String stage,
     String? advertisedAddress,
+    int? portOverride,
   }) {
     final authMode =
         data['authMode'] as String? ?? LanServerAuthMode.offline.value;
     final advertisedId = data['serverId'] as String? ?? '';
     final port =
-        (data['port'] as num?)?.toInt() ?? LanServerProtocol.defaultGamePort;
+        portOverride ??
+        (data['port'] as num?)?.toInt() ??
+        LanServerProtocol.defaultGamePort;
     final metadata = LanServerMetadata.discovery(
       authMode: authMode,
       joinable: data['joinable'] as bool? ?? true,

@@ -1,6 +1,7 @@
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:flutter_form_builder/flutter_form_builder.dart';
+import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/server_host/widgets/settings_box/server_settings_box.dart';
 import 'package:kyber_launcher/features/server_moderation/providers/moderation_cubit.dart';
 import 'package:kyber_launcher/shared/ui/ui.dart';
@@ -10,11 +11,12 @@ class IngameSettings extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
+    final l10n = context.l10n;
     return KyberTable(
       itemStyle: const TextStyle(fontSize: 17),
       items: [
         KyberTableItem.custom(
-          title: 'Shuffle Teams',
+          title: l10n.text('host.ingame.shuffleTeams'),
           onClick: () {
             final value =
                 !(hostingForm.currentState!.fields['shuffleTeams']!.value
@@ -39,19 +41,34 @@ class IngameSettings extends StatelessWidget {
           },
         ),
         KyberTableItem.custom(
-          title: 'Bot Difficulty',
+          title: l10n.text('host.ingame.botDifficulty'),
           builder: (hovered) {
             return FormBuilderField<int>(
               name: 'botDifficulty',
               initialValue: 3,
               builder: (field) {
                 return KyberTableSelector<int>(
-                  items: const [
-                    KyberSelectorItem(title: 'Easy', value: 12),
-                    KyberSelectorItem(title: 'Medium', value: 9),
-                    KyberSelectorItem(title: 'Hard', value: 6),
-                    KyberSelectorItem(title: 'Knight', value: 3),
-                    KyberSelectorItem(title: 'Master', value: 0),
+                  items: [
+                    KyberSelectorItem(
+                      title: l10n.text('host.ingame.difficultyEasy'),
+                      value: 12,
+                    ),
+                    KyberSelectorItem(
+                      title: l10n.text('host.ingame.difficultyMedium'),
+                      value: 9,
+                    ),
+                    KyberSelectorItem(
+                      title: l10n.text('host.ingame.difficultyHard'),
+                      value: 6,
+                    ),
+                    KyberSelectorItem(
+                      title: l10n.text('host.ingame.difficultyKnight'),
+                      value: 3,
+                    ),
+                    KyberSelectorItem(
+                      title: l10n.text('host.ingame.difficultyMaster'),
+                      value: 0,
+                    ),
                   ],
                   value: field.value,
                   hover: hovered,
@@ -67,7 +84,7 @@ class IngameSettings extends StatelessWidget {
           },
         ),
         KyberTableItem.custom(
-          title: 'Bots Team 1',
+          title: l10n.text('host.ingame.botsTeam1'),
           builder: (hovered) {
             return FormBuilderField<int>(
               name: 'botsTeam1',
@@ -91,7 +108,7 @@ class IngameSettings extends StatelessWidget {
           },
         ),
         KyberTableItem.custom(
-          title: 'Bots Team 2',
+          title: l10n.text('host.ingame.botsTeam2'),
           builder: (hovered) {
             return FormBuilderField<int>(
               name: 'botsTeam2',
@@ -103,7 +120,6 @@ class IngameSettings extends StatelessWidget {
                   value: field.value!,
                   hover: hovered,
                   onChanged: (value) {
-                    //TODO: throttle
                     field.didChange(value);
                     context.read<ModerationCubit>().botChangeStream!.add((
                       2,
@@ -116,7 +132,7 @@ class IngameSettings extends StatelessWidget {
           },
         ),
         KyberTableItem.custom(
-          title: 'Freeze Bots',
+          title: l10n.text('host.ingame.freezeBots'),
           onClick: () {
             final value =
                 !(hostingForm.currentState!.fields['freezeBots']!.value
@@ -141,7 +157,7 @@ class IngameSettings extends StatelessWidget {
           },
         ),
         KyberTableItem.custom(
-          title: 'Bots Ignore Players',
+          title: l10n.text('host.ingame.botsIgnorePlayers'),
           onClick: () {
             final value =
                 !(hostingForm.currentState!.fields['botsIgnorePlayers']!.value

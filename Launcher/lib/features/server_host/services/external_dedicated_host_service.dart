@@ -26,6 +26,7 @@ class ExternalDedicatedHostState {
     this.pid,
     this.serverName,
     this.port,
+    this.interfacePort,
     this.stdoutPath,
     this.stderrPath,
     this.error,
@@ -40,6 +41,7 @@ class ExternalDedicatedHostState {
   final int? pid;
   final String? serverName;
   final int? port;
+  final int? interfacePort;
   final String? stdoutPath;
   final String? stderrPath;
   final String? error;
@@ -53,6 +55,7 @@ class ExternalDedicatedHostState {
     int? pid,
     String? serverName,
     int? port,
+    int? interfacePort,
     String? stdoutPath,
     String? stderrPath,
     String? error,
@@ -64,6 +67,7 @@ class ExternalDedicatedHostState {
       pid: pid ?? this.pid,
       serverName: serverName ?? this.serverName,
       port: port ?? this.port,
+      interfacePort: interfacePort ?? this.interfacePort,
       stdoutPath: stdoutPath ?? this.stdoutPath,
       stderrPath: stderrPath ?? this.stderrPath,
       error: error,
@@ -132,6 +136,7 @@ class ExternalDedicatedHostService extends ChangeNotifier {
       startupCommands,
     );
     final firstMap = mapEntries.first;
+    const serverInterfacePort = 19103;
 
     final args = [
       '-Action',
@@ -146,6 +151,8 @@ class ExternalDedicatedHostService extends ChangeNotifier {
       serverName,
       '-ServerPort',
       port.toString(),
+      '-ServerInterfacePort',
+      serverInterfacePort.toString(),
       '-MaxPlayers',
       maxPlayers.toString(),
       '-Map',
@@ -191,10 +198,12 @@ class ExternalDedicatedHostService extends ChangeNotifier {
         status: ExternalDedicatedHostStatus.starting,
         serverName: serverName,
         port: port,
+        interfacePort: serverInterfacePort,
         logs: [
           'Checking for orphaned BFII/Kyber host processes before startup...',
           'Using passwordless direct host mode; EA passwords are not passed.',
           'BFII license mode: ${launchConfig.licenseMode.value}.',
+          'Dedicated control interface: 127.0.0.1:$serverInterfacePort.',
           'Starting external BFII host helper...',
         ],
       ),
@@ -210,6 +219,10 @@ class ExternalDedicatedHostService extends ChangeNotifier {
     _emitProgressLine(
       onProgress,
       'BFII license mode: ${launchConfig.licenseMode.value}.',
+    );
+    _emitProgressLine(
+      onProgress,
+      'Dedicated control interface: 127.0.0.1:$serverInterfacePort.',
     );
     _emitProgressLine(onProgress, 'Starting external BFII host helper...');
 
@@ -691,10 +704,28 @@ class ExternalDedicatedHostService extends ChangeNotifier {
       _state.copyWith(
         status: ExternalDedicatedHostStatus.running,
         pid: _parseHostPid(stdoutLines),
+        interfacePort: _parseInterfacePort(stdoutLines) ?? _state.interfacePort,
         stdoutPath: _parsePath(stdoutLines, 'Server log:'),
         startedAt: DateTime.now(),
       ),
     );
+  }
+
+  int? _parseInterfacePort(List<String> lines) {
+    final patterns = [
+      RegExp(r'\[RPC\] Started interface server on port (\d+)'),
+      RegExp(r'Interface port:\s*(\d+)'),
+    ];
+    for (final line in lines) {
+      for (final pattern in patterns) {
+        final match = pattern.firstMatch(line);
+        if (match != null) {
+          return int.tryParse(match.group(1)!);
+        }
+      }
+    }
+
+    return null;
   }
 
   Future<void> _cleanupHelperStreams({

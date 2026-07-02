@@ -57,6 +57,7 @@ class _SettingsBoxHeaderState extends State<SettingsBoxHeader> {
                 child: KyberFormInputField(
                   name: 'serverName',
                   initialValue: state.selected ? state.server?.name : null,
+                  disabled: state.localControl,
                   validator: FormBuilderValidators.compose([
                     FormBuilderValidators.required(),
                     FormBuilderValidators.minLength(3),
@@ -91,11 +92,21 @@ class _SettingsBoxHeaderState extends State<SettingsBoxHeader> {
                       child: FittedBox(
                         fit: BoxFit.scaleDown,
                         alignment: Alignment.centerLeft,
-                        child: KyberButton(
-                          text: _buttonText(context, state),
-                          onPressed: _starting
-                              ? null
-                              : () => _openStartDialog(context, state),
+                        child: Row(
+                          mainAxisSize: MainAxisSize.min,
+                          children: [
+                            if (state.localControl)
+                              _LocalControlStatusChip(
+                                text: l10n.text('host.localControl.connected'),
+                              )
+                            else
+                              KyberButton(
+                                text: _buttonText(context, state),
+                                onPressed: _starting
+                                    ? null
+                                    : () => _openStartDialog(context, state),
+                              ),
+                          ],
                         ),
                       ),
                     );
@@ -103,17 +114,27 @@ class _SettingsBoxHeaderState extends State<SettingsBoxHeader> {
                 ),
               ),
               const SizedBox(width: 12),
-              SizedBox(
-                height: 35,
-                width: widget.lanOnly ? 180 : 220,
-                child: KyberTabBar(
-                  tabs: [
-                    Text(l10n.text('common.settings')),
-                    Text(l10n.text('common.info')),
-                  ],
-                  onChanged: widget.onPageChanged,
-                  selectedIndex: widget.selectedPage,
-                ),
+              BlocBuilder<ModerationCubit, ModerationServerState>(
+                builder: (context, state) {
+                  if (state.localControl) {
+                    return _ControlPanelLabel(
+                      text: l10n.text('host.dedicatedControl.controlPanel'),
+                    );
+                  }
+
+                  return SizedBox(
+                    height: 35,
+                    width: widget.lanOnly ? 180 : 220,
+                    child: KyberTabBar(
+                      tabs: [
+                        Text(l10n.text('common.settings')),
+                        Text(l10n.text('common.info')),
+                      ],
+                      onChanged: widget.onPageChanged,
+                      selectedIndex: widget.selectedPage,
+                    ),
+                  );
+                },
               ),
             ],
           ),
@@ -126,6 +147,10 @@ class _SettingsBoxHeaderState extends State<SettingsBoxHeader> {
     final l10n = context.l10n;
     if (_starting) {
       return l10n.text('host.startingServer');
+    }
+
+    if (state.localControl) {
+      return l10n.text('host.localControl.connected');
     }
 
     if (state.selected) {
@@ -146,6 +171,13 @@ class _SettingsBoxHeaderState extends State<SettingsBoxHeader> {
     if (_starting) {
       NotificationService.info(
         message: context.l10n.text('host.progress.alreadyRunning'),
+      );
+      return;
+    }
+
+    if (state.localControl) {
+      NotificationService.info(
+        message: context.l10n.text('host.localControl.noUpdate'),
       );
       return;
     }
@@ -369,6 +401,79 @@ class _SettingsBoxHeaderState extends State<SettingsBoxHeader> {
       HostStartProgressEvent(
         message: message,
         status: HostStartProgressStatus.error,
+      ),
+    );
+  }
+}
+
+class _LocalControlStatusChip extends StatelessWidget {
+  const _LocalControlStatusChip({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 35,
+      padding: const EdgeInsets.symmetric(horizontal: 14),
+      decoration: BoxDecoration(
+        color: Colors.black.withValues(alpha: .32),
+        border: Border.all(
+          color: Colors.green.withValues(alpha: .48),
+          width: 2,
+        ),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Row(
+        mainAxisSize: MainAxisSize.min,
+        children: [
+          Container(
+            width: 8,
+            height: 8,
+            decoration: BoxDecoration(
+              color: Colors.green,
+              shape: BoxShape.circle,
+            ),
+          ),
+          const SizedBox(width: 8),
+          Text(
+            text,
+            maxLines: 1,
+            overflow: TextOverflow.ellipsis,
+            style: FluentTheme.of(context).typography.bodyStrong?.copyWith(
+              color: Colors.green,
+            ),
+          ),
+        ],
+      ),
+    );
+  }
+}
+
+class _ControlPanelLabel extends StatelessWidget {
+  const _ControlPanelLabel({required this.text});
+
+  final String text;
+
+  @override
+  Widget build(BuildContext context) {
+    return Container(
+      height: 35,
+      width: 220,
+      alignment: Alignment.center,
+      decoration: BoxDecoration(
+        border: Border.all(
+          color: Colors.white.withValues(alpha: .42),
+          width: 2,
+        ),
+        color: Colors.black.withValues(alpha: .28),
+        borderRadius: BorderRadius.circular(4),
+      ),
+      child: Text(
+        text,
+        maxLines: 1,
+        overflow: TextOverflow.ellipsis,
+        style: FluentTheme.of(context).typography.bodyStrong,
       ),
     );
   }

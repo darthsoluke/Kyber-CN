@@ -1193,6 +1193,7 @@ if ($Action -eq 'Host') {
     Ensure-FirewallRule -Port $ServerPort
     $joinAddresses = @(Get-HostJoinAddresses)
     Write-Host "Dedicated server ready. PID: $($server.Process.Id)"
+    Write-Host "Interface port: $ServerInterfacePort"
     foreach ($address in $joinAddresses) {
         Write-Host "Join address: $address`:$ServerPort"
     }

@@ -11,7 +11,7 @@ class LanDirectConnectResult {
   });
 
   final String host;
-  final int port;
+  final int? port;
 }
 
 class LanDirectConnectDialog extends StatefulWidget {
@@ -22,48 +22,48 @@ class LanDirectConnectDialog extends StatefulWidget {
 }
 
 class _LanDirectConnectDialogState extends State<LanDirectConnectDialog> {
-  String host = '';
-  String portText = '25200';
+  String address = '';
 
   void _submit() {
     final l10n = context.l10n;
-    var hostValue = host.trim();
-    var portValue = int.tryParse(portText.trim());
+    final parsed = _parseAddress(address);
 
-    // Allow paste of "ip:port" into the host field.
-    if (hostValue.contains(':') && (portValue == null || portValue == 25200)) {
-      final index = hostValue.lastIndexOf(':');
-      final maybeHost = hostValue.substring(0, index).trim();
-      final maybePort = int.tryParse(hostValue.substring(index + 1).trim());
-      if (maybeHost.isNotEmpty &&
-          maybePort != null &&
-          maybePort > 0 &&
-          maybePort <= 65535) {
-        hostValue = maybeHost;
-        portValue = maybePort;
-      }
-    }
-
-    if (hostValue.isEmpty) {
+    if (parsed == null) {
       NotificationService.error(
-        message: l10n.text('lan.directConnect.enterHost'),
-      );
-      return;
-    }
-
-    if (portValue == null || portValue <= 0 || portValue > 65535) {
-      NotificationService.error(
-        message: l10n.text('lan.directConnect.enterValidPort'),
+        message: l10n.text('lan.directConnect.enterValidAddress'),
       );
       return;
     }
 
     Navigator.of(context).pop(
       LanDirectConnectResult(
-        host: hostValue,
-        port: portValue,
+        host: parsed.$1,
+        port: parsed.$2,
       ),
     );
+  }
+
+  (String, int?)? _parseAddress(String value) {
+    final trimmed = value.trim();
+    if (trimmed.isEmpty || trimmed.contains(RegExp(r'\s'))) {
+      return null;
+    }
+
+    var host = trimmed;
+    int? port;
+    if (trimmed.contains(':')) {
+      final index = trimmed.lastIndexOf(':');
+      host = trimmed.substring(0, index).trim();
+      port = int.tryParse(trimmed.substring(index + 1).trim());
+      if (host.isEmpty || port == null || port <= 0 || port > 65535) {
+        return null;
+      }
+    }
+
+    if (host.isEmpty) {
+      return null;
+    }
+    return (host, port);
   }
 
   @override
@@ -80,19 +80,12 @@ class _LanDirectConnectDialogState extends State<LanDirectConnectDialog> {
         children: [
           Text(
             l10n.text('lan.directConnect.description'),
-            style: const TextStyle(color: kWhiteColor),
+            style: const TextStyle(color: kWhiteColor, height: 1.25),
           ),
           const SizedBox(height: 14),
           KyberInput(
-            placeholder: l10n.text('lan.directConnect.hostPlaceholder'),
-            onChanged: (value) => setState(() => host = value),
-            onFieldSubmitted: (_) => _submit(),
-          ),
-          const SizedBox(height: 10),
-          KyberInput(
-            placeholder: l10n.text('lan.directConnect.portPlaceholder'),
-            initialValue: portText,
-            onChanged: (value) => setState(() => portText = value),
+            placeholder: l10n.text('lan.directConnect.addressPlaceholder'),
+            onChanged: (value) => setState(() => address = value),
             onFieldSubmitted: (_) => _submit(),
           ),
         ],

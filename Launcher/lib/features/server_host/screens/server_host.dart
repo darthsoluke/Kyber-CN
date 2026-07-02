@@ -1,11 +1,15 @@
+import 'dart:async';
+
 import 'package:fluent_ui/fluent_ui.dart';
 import 'package:flutter/material.dart' as mt;
 import 'package:flutter_bloc/flutter_bloc.dart';
 import 'package:kyber_launcher/core/config/colors.dart';
 import 'package:kyber_launcher/core/i18n/localization.dart';
 import 'package:kyber_launcher/features/kyber/providers/kyber_status_cubit.dart';
+import 'package:kyber_launcher/features/maxima/services/maxima_instance_service.dart';
 import 'package:kyber_launcher/features/server_browser/widgets/server_info_box/server_info_box.dart';
 import 'package:kyber_launcher/features/server_host/providers/host_search_cubit.dart';
+import 'package:kyber_launcher/features/server_host/services/external_dedicated_host_service.dart';
 import 'package:kyber_launcher/features/server_host/widgets/create_server/map_rotation_page.dart';
 import 'package:kyber_launcher/features/server_host/widgets/create_server/mod_collection_selector.dart';
 import 'package:kyber_launcher/features/server_host/widgets/hosting_default_card.dart';
@@ -16,6 +20,7 @@ import 'package:kyber_launcher/features/server_moderation/screens/moderation_ser
 import 'package:kyber_launcher/features/server_moderation/screens/server_moderation.dart';
 import 'package:kyber_launcher/features/tutorial/models/tutorials/server_host_tutorial.dart';
 import 'package:kyber_launcher/gen/assets.gen.dart';
+import 'package:kyber_launcher/injection_container.dart';
 import 'package:kyber_launcher/shared/ui/buttons/button.dart';
 import 'package:kyber_launcher/shared/ui/elements/kyber_input.dart';
 import 'package:kyber_launcher/shared/ui/elements/kyber_tab_bar.dart';
@@ -36,40 +41,123 @@ final TextEditingController searchController = TextEditingController();
 
 class _ServerHostState extends State<ServerHost> {
   late int _currentPage;
+  late final ExternalDedicatedHostService _dedicatedHostService;
+  late final MaximaInstanceService _maximaInstanceService;
   bool showClose = false;
   bool createServer = false;
+  bool _selectingLocalDedicated = false;
 
   @override
   void initState() {
+    super.initState();
     _currentPage = widget.initialPage ?? 0;
     createServer = widget.lanOnly;
-    super.initState();
+    _dedicatedHostService = sl.get<ExternalDedicatedHostService>();
+    _maximaInstanceService = sl.get<MaximaInstanceService>();
+    _dedicatedHostService.addListener(_syncLocalDedicatedControl);
+    _maximaInstanceService.addListener(_syncLocalDedicatedControl);
+    mt.WidgetsBinding.instance.addPostFrameCallback(
+      (_) => _syncLocalDedicatedControl(),
+    );
+  }
+
+  @override
+  void dispose() {
+    _dedicatedHostService.removeListener(_syncLocalDedicatedControl);
+    _maximaInstanceService.removeListener(_syncLocalDedicatedControl);
+    super.dispose();
+  }
+
+  void _syncLocalDedicatedControl() {
+    if (!mounted || widget.lanOnly) {
+      return;
+    }
+
+    final externalState = _dedicatedHostService.state;
+    final hasExternalControl =
+        externalState.status == ExternalDedicatedHostStatus.running;
+    final moderationCubit = context.read<ModerationCubit>();
+    final moderationState = moderationCubit.state;
+
+    if (hasExternalControl) {
+      if (createServer || _currentPage != 0) {
+        setState(() {
+          createServer = false;
+          _currentPage = 0;
+        });
+      }
+
+      if (!_selectingLocalDedicated &&
+          (!moderationState.selected || !moderationState.localControl)) {
+        _selectingLocalDedicated = true;
+        unawaited(
+          moderationCubit.selectServer().whenComplete(() {
+            _selectingLocalDedicated = false;
+          }),
+        );
+      }
+      return;
+    }
+
+    final dedicatedStopped =
+        externalState.status == ExternalDedicatedHostStatus.idle ||
+        externalState.status == ExternalDedicatedHostStatus.failed;
+    if (dedicatedStopped &&
+        moderationState.selected &&
+        moderationState.localControl) {
+      moderationCubit.unloadServer();
+      if (!createServer || _currentPage != 0) {
+        setState(() {
+          createServer = true;
+          _currentPage = 0;
+        });
+      }
+    }
   }
 
   @override
   Widget build(BuildContext context) {
     final l10n = context.l10n;
-    return BlocListener<KyberStatusCubit, KyberStatusState>(
-      listenWhen: (previous, current) =>
-          previous is! KyberStatusHosting && current is KyberStatusHosting ||
-          previous is KyberStatusHosting && current is! KyberStatusHosting,
-      listener: (context, state) {
-        if (widget.lanOnly) {
-          return;
-        }
+    return MultiBlocListener(
+      listeners: [
+        BlocListener<KyberStatusCubit, KyberStatusState>(
+          listenWhen: (previous, current) =>
+              previous is! KyberStatusHosting &&
+                  current is KyberStatusHosting ||
+              previous is KyberStatusHosting && current is! KyberStatusHosting,
+          listener: (context, state) {
+            if (widget.lanOnly) {
+              return;
+            }
 
-        if (state is KyberStatusHosting) {
-          Logger(
-            'server_host',
-          ).info('Detected hosting status (${state.serverState.id})');
-          setState(() => createServer = false);
-          context.read<ModerationCubit>().selectServer(
-            serverId: state.serverState.id,
-          );
-        } else {
-          context.read<ModerationCubit>().unloadServer();
-        }
-      },
+            if (state is KyberStatusHosting) {
+              Logger(
+                'server_host',
+              ).info('Detected hosting status (${state.serverState.id})');
+              setState(() => createServer = false);
+              unawaited(
+                context.read<ModerationCubit>().selectServer(
+                  serverId: state.serverState.id,
+                ),
+              );
+            } else {
+              context.read<ModerationCubit>().unloadServer();
+            }
+          },
+        ),
+        BlocListener<ModerationCubit, ModerationServerState>(
+          listenWhen: (previous, current) =>
+              !previous.selected && current.selected,
+          listener: (context, state) {
+            if (createServer) {
+              setState(() {
+                createServer = false;
+                _currentPage = 0;
+              });
+            }
+          },
+        ),
+      ],
       child: Row(
         children: [
           Expanded(
@@ -113,9 +201,11 @@ class _ServerHostState extends State<ServerHost> {
                             ],
                             onChanged: (value) {
                               if (value == 0) {
-                                context
-                                    .read<ModerationServersCubit>()
-                                    .loadServers();
+                                unawaited(
+                                  context
+                                      .read<ModerationServersCubit>()
+                                      .loadServers(),
+                                );
                               }
                             },
                             selectedIndex: -1,
@@ -156,17 +246,12 @@ class _ServerHostState extends State<ServerHost> {
                                 () => _currentPage = selectedIndex,
                               );
                               if (selectedIndex == 2) {
-                                context
-                                    .read<ModerationServersCubit>()
-                                    .loadServers();
+                                unawaited(
+                                  context
+                                      .read<ModerationServersCubit>()
+                                      .loadServers(),
+                                );
                               }
-                              /*showKyberDialog(
-                                          context: context,
-                                          builder: (_) => BlocProvider.value(
-                                            value: context.read<HostSearchCubit>(),
-                                            child: LoadMapDialog(),
-                                          ),
-                                        );*/
                             },
                             selectedIndex: _currentPage,
                           ),

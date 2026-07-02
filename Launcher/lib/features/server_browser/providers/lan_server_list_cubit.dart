@@ -6,6 +6,7 @@ import 'package:kyber_launcher/core/routing/app_router.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_filter.dart';
 import 'package:kyber_launcher/features/server_browser/models/server_list_state.dart';
 import 'package:kyber_launcher/features/server_browser/services/lan_server_discovery_service.dart';
+import 'package:kyber_launcher/features/server_browser/services/sakura_frp_discovery_service.dart';
 import 'package:logging/logging.dart';
 
 const _pageLimit = 12;
@@ -13,7 +14,10 @@ const _pageLimit = 12;
 class LanServerListCubit extends Cubit<ServerListState> {
   LanServerListCubit({
     LanServerDiscoveryService? discoveryService,
+    SakuraFrpDiscoveryService? sakuraFrpDiscoveryService,
   }) : _discoveryService = discoveryService ?? LanServerDiscoveryService(),
+       _sakuraFrpDiscoveryService =
+           sakuraFrpDiscoveryService ?? SakuraFrpDiscoveryService(),
        super(const ServerListInitial()) {
     filter = ServerFilter();
     emit(const ServerListLoading());
@@ -31,6 +35,7 @@ class LanServerListCubit extends Cubit<ServerListState> {
   }
 
   final LanServerDiscoveryService _discoveryService;
+  final SakuraFrpDiscoveryService _sakuraFrpDiscoveryService;
   final Logger _logger = Logger('lan_server_list');
 
   bool _needsUpdate = false;
@@ -109,15 +114,69 @@ class LanServerListCubit extends Cubit<ServerListState> {
     try {
       final servers = await _discoveryService.discover();
       final endpointServer = await _discoverEndpointFromQuery();
+      final sakuraServers = await _discoverSakuraServers();
       final nextServers = [...servers];
       if (endpointServer != null) {
         nextServers.add(endpointServer);
       }
+      nextServers.addAll(sakuraServers);
       _allServers = _mergeServers(nextServers);
       _emitFilteredResults();
     } on Object catch (error) {
       emit(ServerListError(error.toString()));
     }
+  }
+
+  Future<List<Server>> _discoverSakuraServers() async {
+    late final List<SakuraFrpEndpoint> endpoints;
+    try {
+      endpoints = await _sakuraFrpDiscoveryService.resolveEndpoints();
+    } on Object catch (error, stackTrace) {
+      _logger
+        ..warning('SAKURA_STAGE[list.resolve.failed] error=$error')
+        ..finer(stackTrace.toString());
+      return const <Server>[];
+    }
+
+    if (endpoints.isEmpty) {
+      return const <Server>[];
+    }
+
+    final servers = <Server>[];
+    final acceptedEndpoints = <SakuraFrpEndpoint>[];
+    for (final endpoint in endpoints) {
+      try {
+        final server = await _discoveryService.discoverExternalEndpoint(
+          host: endpoint.host,
+          metadataPort: endpoint.metadataPort,
+          gamePort: endpoint.gamePort,
+          source: endpoint.source,
+        );
+        servers.add(server);
+        acceptedEndpoints.add(endpoint);
+        _logger.info(
+          'SAKURA_STAGE[list.endpoint.accepted] '
+          'host=${endpoint.host} metadataPort=${endpoint.metadataPort} '
+          'gamePort=${endpoint.gamePort} serverId=${server.id}',
+        );
+      } on Object catch (error, stackTrace) {
+        _logger
+          ..warning(
+            'SAKURA_STAGE[list.endpoint.failed] '
+            'host=${endpoint.host} metadataPort=${endpoint.metadataPort} '
+            'gamePort=${endpoint.gamePort} error=$error',
+          )
+          ..finer(stackTrace.toString());
+      }
+    }
+
+    if (acceptedEndpoints.isNotEmpty) {
+      _sakuraFrpDiscoveryService.rememberSuccessfulEndpoints(
+        acceptedEndpoints,
+      );
+    }
+
+    return servers;
   }
 
   Future<Server?> _discoverEndpointFromQuery() async {
@@ -126,16 +185,41 @@ class LanServerListCubit extends Cubit<ServerListState> {
       return null;
     }
 
-    try {
-      final server = await _discoveryService.discoverHost(host: target.host);
-      if (target.port != null && server.port != target.port) {
-        _logger.warning(
-          'DIRECT_STAGE[list.query_probe.port_mismatch] '
-          'queryHost=${target.host} queryPort=${target.port} '
-          'metadataPort=${server.port}',
+    final storedEndpoints = _sakuraFrpDiscoveryService
+        .resolveStoredEndpointsFor(host: target.host, port: target.port);
+    for (final endpoint in storedEndpoints) {
+      try {
+        final server = await _discoveryService.discoverExternalEndpoint(
+          host: endpoint.host,
+          metadataPort: endpoint.metadataPort,
+          gamePort: endpoint.gamePort,
+          source: endpoint.source,
         );
-        return null;
+        _logger.info(
+          'DIRECT_STAGE[list.query_probe.stored_sakura_accepted] '
+          'queryHost=${target.host} queryPort=${target.port ?? 0} '
+          'metadataPort=${endpoint.metadataPort} gamePort=${endpoint.gamePort} '
+          'serverId=${server.id}',
+        );
+        return server;
+      } on Object catch (error, stackTrace) {
+        _logger
+          ..warning(
+            'DIRECT_STAGE[list.query_probe.stored_sakura_failed] '
+            'queryHost=${target.host} queryPort=${target.port ?? 0} '
+            'metadataPort=${endpoint.metadataPort} '
+            'gamePort=${endpoint.gamePort} '
+            'error=$error',
+          )
+          ..finer(stackTrace.toString());
       }
+    }
+
+    try {
+      final server = await _discoveryService.discoverPublicAddress(
+        host: target.host,
+        gamePort: target.port,
+      );
 
       _logger.info(
         'DIRECT_STAGE[list.query_probe.accepted] '

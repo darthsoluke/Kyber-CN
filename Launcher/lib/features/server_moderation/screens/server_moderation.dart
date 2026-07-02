@@ -59,10 +59,22 @@ class _ServerModerationState extends State<ServerModeration> {
                     ],
                   ),
                   ExpandedHeaderSection(
-                    children: [Text(l10n.text('moderation.moderators'))],
+                    children: [
+                      Text(
+                        state.localControl
+                            ? 'LOCAL CONTROL'
+                            : l10n.text('moderation.moderators'),
+                      ),
+                    ],
                   ),
                   ExpandedHeaderSection(
-                    children: [Text(l10n.text('moderation.bannedPlayers'))],
+                    children: [
+                      Text(
+                        state.localControl
+                            ? 'LOCAL BLACKLIST'
+                            : l10n.text('moderation.bannedPlayers'),
+                      ),
+                    ],
                   ),
                 ],
               ),
@@ -164,29 +176,107 @@ class _ServerModerationState extends State<ServerModeration> {
                             child: Column(
                               spacing: 15,
                               children: [
-                                NormalButton(
-                                  label: Text(
-                                    l10n.text('moderation.exportBans'),
+                                if (state.localControl) ...[
+                                  NormalButton(
+                                    label: const Text('REFRESH STATE'),
+                                    onPressed: () {
+                                      unawaited(
+                                        context
+                                            .read<ModerationCubit>()
+                                            .refreshLocalState(),
+                                      );
+                                    },
                                   ),
-                                  onPressed: NotificationService.notImplemented,
-                                ),
-                                NormalButton(
-                                  label: Text(
-                                    l10n.text('moderation.importBans'),
+                                  NormalButton(
+                                    label: const Text('CLEAR BLACKLIST'),
+                                    onPressed: () {
+                                      unawaited(
+                                        context
+                                            .read<ModerationCubit>()
+                                            .clearLocalBlacklist(),
+                                      );
+                                    },
                                   ),
-                                  onPressed: NotificationService.notImplemented,
-                                ),
-                                NormalButton(
-                                  label: Text(l10n.text('moderation.kickAll')),
-                                  onPressed: NotificationService.notImplemented,
-                                ),
-                                NormalButton(
-                                  label: Text(
-                                    l10n.text('moderation.banAll'),
-                                    textAlign: TextAlign.center,
+                                  NormalButton(
+                                    label: Text(
+                                      l10n.text('moderation.kickAll'),
+                                    ),
+                                    onPressed: () async {
+                                      final reason =
+                                          await showKyberDialog<String?>(
+                                            context: context,
+                                            builder: (_) =>
+                                                const ModerationInputDialog(
+                                                  title: 'Kick All',
+                                                  prompt:
+                                                      'Reason sent to every '
+                                                      'player:',
+                                                ),
+                                          );
+                                      if (reason == null || !context.mounted) {
+                                        return;
+                                      }
+
+                                      await context
+                                          .read<ModerationCubit>()
+                                          .kickAllPlayers(reason: reason);
+                                    },
                                   ),
-                                  onPressed: NotificationService.notImplemented,
-                                ),
+                                  NormalButton(
+                                    label: Text(
+                                      l10n.text('moderation.banAll'),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    onPressed: () async {
+                                      final reason =
+                                          await showKyberDialog<String?>(
+                                            context: context,
+                                            builder: (_) =>
+                                                const ModerationInputDialog(
+                                                  title: 'Ban All',
+                                                  prompt: 'Blacklist reason:',
+                                                ),
+                                          );
+                                      if (reason == null || !context.mounted) {
+                                        return;
+                                      }
+
+                                      await context
+                                          .read<ModerationCubit>()
+                                          .banAllPlayers(reason: reason);
+                                    },
+                                  ),
+                                ] else ...[
+                                  NormalButton(
+                                    label: Text(
+                                      l10n.text('moderation.exportBans'),
+                                    ),
+                                    onPressed:
+                                        NotificationService.notImplemented,
+                                  ),
+                                  NormalButton(
+                                    label: Text(
+                                      l10n.text('moderation.importBans'),
+                                    ),
+                                    onPressed:
+                                        NotificationService.notImplemented,
+                                  ),
+                                  NormalButton(
+                                    label: Text(
+                                      l10n.text('moderation.kickAll'),
+                                    ),
+                                    onPressed:
+                                        NotificationService.notImplemented,
+                                  ),
+                                  NormalButton(
+                                    label: Text(
+                                      l10n.text('moderation.banAll'),
+                                      textAlign: TextAlign.center,
+                                    ),
+                                    onPressed:
+                                        NotificationService.notImplemented,
+                                  ),
+                                ],
                               ],
                             ),
                           ),
@@ -194,9 +284,17 @@ class _ServerModerationState extends State<ServerModeration> {
                       ),
                     ),
                     const ContainerSeparatorH(),
-                    const Expanded(child: _ModeratorContainer()),
+                    Expanded(
+                      child: state.localControl
+                          ? const _LocalControlInfo()
+                          : const _ModeratorContainer(),
+                    ),
                     const ContainerSeparatorH(),
-                    const Expanded(child: _PunishmentContainer()),
+                    Expanded(
+                      child: state.localControl
+                          ? const _LocalBlacklistContainer()
+                          : const _PunishmentContainer(),
+                    ),
                   ],
                 ),
               ),
@@ -466,6 +564,140 @@ class _PunishmentContainerState extends State<_PunishmentContainer> {
             return const Divider();
           },
           itemCount: punishments.length,
+        );
+      },
+    );
+  }
+}
+
+class _LocalControlInfo extends StatelessWidget {
+  const _LocalControlInfo();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ModerationCubit, ModerationServerState>(
+      builder: (context, state) {
+        return KyberEventContainer(
+          child: Padding(
+            padding: const EdgeInsets.all(16),
+            child: DefaultTextStyle(
+              style: const TextStyle(
+                color: kWhiteColor,
+                fontFamily: FontFamily.iBMPlexMono,
+                fontSize: 13,
+              ),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                spacing: 10,
+                children: [
+                  Text(
+                    'LOCAL DEDICATED SERVER'.toUpperCase(),
+                    style: const TextStyle(
+                      fontFamily: FontFamily.battlefrontUI,
+                      fontWeight: FontWeight.bold,
+                      fontSize: 20,
+                    ),
+                  ),
+                  Text('Server: ${state.server?.name ?? '-'}'),
+                  Text(
+                    'Players: ${state.players.length}/'
+                    '${state.server?.maxPlayerCount ?? 0}',
+                  ),
+                  Text('Blacklist: ${state.localBlacklistEntries.length}'),
+                  const SizedBox(height: 10),
+                  const Text(
+                    'Available local controls:',
+                  ),
+                  const Text('- Kick / ban / swap players from live teams'),
+                  const Text('- Broadcast admin messages from console'),
+                  const Text('- Shuffle or swap all teams'),
+                  const Text('- Change map, restart, pause timer'),
+                  const Text('- Adjust bot counts in host settings'),
+                ],
+              ),
+            ),
+          ),
+        );
+      },
+    );
+  }
+}
+
+class _LocalBlacklistContainer extends StatelessWidget {
+  const _LocalBlacklistContainer();
+
+  @override
+  Widget build(BuildContext context) {
+    return BlocBuilder<ModerationCubit, ModerationServerState>(
+      builder: (context, state) {
+        final entries = state.localBlacklistEntries;
+        if (entries.isEmpty) {
+          return const Center(
+            child: Text(
+              'No local blacklist entries',
+              style: TextStyle(
+                fontFamily: FontFamily.battlefrontUI,
+                fontSize: 18,
+              ),
+            ),
+          );
+        }
+
+        return SuperListView.separated(
+          padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 10),
+          itemBuilder: (context, index) {
+            final entry = entries.elementAt(index);
+            final expires = entry.expiresAt == null
+                ? 'PERMANENT'
+                : DateFormat.yMd().add_Hm().format(entry.expiresAt!);
+            return AnimatedContainer(
+              duration: const Duration(milliseconds: 150),
+              decoration: BoxDecoration(
+                color: index.isEven
+                    ? const Color(0xFFD9D9D9).withValues(alpha: .1)
+                    : const Color(0xFFD9D9D9).withValues(alpha: .2),
+              ),
+              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 8),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    '${entry.name} (${entry.id})',
+                    style: const TextStyle(
+                      fontFamily: FontFamily.battlefrontUI,
+                      fontSize: 18,
+                    ),
+                  ),
+                  const SizedBox(height: 4),
+                  Text(
+                    'UNTIL: $expires',
+                    style: const TextStyle(
+                      fontFamily: FontFamily.iBMPlexMono,
+                      fontSize: 12,
+                    ),
+                  ),
+                  Text(
+                    'REASON: ${entry.reason}',
+                    style: const TextStyle(
+                      fontFamily: FontFamily.iBMPlexMono,
+                      fontSize: 12,
+                    ),
+                  ),
+                  const SizedBox(height: 8),
+                  KyberButton(
+                    text: 'UNBAN',
+                    onPressed: () {
+                      unawaited(
+                        context.read<ModerationCubit>().unbanPlayer(entry.id),
+                      );
+                    },
+                  ),
+                ],
+              ),
+            );
+          },
+          separatorBuilder: (context, index) => const Divider(),
+          itemCount: entries.length,
         );
       },
     );

@@ -14,6 +14,7 @@ class Preferences {
   static final admin = Admin();
   static final nexusMods = NexusMods();
   static final patreon = Patreon();
+  static final sakuraFrp = SakuraFrp();
 }
 
 class General {
@@ -176,6 +177,44 @@ class NexusMods {
   set refreshToken(String? value) => box.put('nexusmods_refresh_token', value);
 }
 
+class SakuraFrp {
+  bool get enabled => box.get('sakuraFrpEnabled', defaultValue: false) as bool;
+
+  set enabled(bool value) => box.put('sakuraFrpEnabled', value);
+
+  String get apiBaseUrl =>
+      box.get(
+            'sakuraFrpApiBaseUrl',
+            defaultValue: 'https://api.natfrp.com/v4',
+          )
+          as String;
+
+  set apiBaseUrl(String value) => box.put('sakuraFrpApiBaseUrl', value);
+
+  String get apiToken =>
+      box.get('sakuraFrpApiToken', defaultValue: '') as String;
+
+  set apiToken(String value) => box.put('sakuraFrpApiToken', value);
+
+  String get nodeHostOverrides =>
+      box.get('sakuraFrpNodeHostOverrides', defaultValue: '') as String;
+
+  set nodeHostOverrides(String value) =>
+      box.put('sakuraFrpNodeHostOverrides', value);
+
+  String get manualEndpoints =>
+      box.get('sakuraFrpManualEndpoints', defaultValue: '') as String;
+
+  set manualEndpoints(String value) =>
+      box.put('sakuraFrpManualEndpoints', value);
+
+  String get cachedEndpoints =>
+      box.get('sakuraFrpCachedEndpoints', defaultValue: '') as String;
+
+  set cachedEndpoints(String value) =>
+      box.put('sakuraFrpCachedEndpoints', value);
+}
+
 class Debug {
   bool get frbDebugLogs => box.get('frbDebugLogs', defaultValue: false) as bool;
 
@@ -260,6 +299,19 @@ class HostServer {
 
   set dedicatedLicenseMode(String value) =>
       box.put('hostDedicatedLicenseMode', value);
+
+  List<String> get dedicatedBlacklistEntries {
+    final entries =
+        box.get(
+              'hostDedicatedBlacklistEntries',
+              defaultValue: const <String>[],
+            )
+            as List?;
+    return entries?.whereType<String>().toList() ?? const <String>[];
+  }
+
+  set dedicatedBlacklistEntries(List<String> value) =>
+      box.put('hostDedicatedBlacklistEntries', value);
 
   bool get onlineMode =>
       box.get('hostOnlineMode', defaultValue: true) as bool? ?? true;

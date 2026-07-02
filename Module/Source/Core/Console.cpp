@@ -304,6 +304,101 @@ void SetTeamByIdCommand(ConsoleContext& cc)
     cc << "Set " << player->m_name << " to team " << team;
 }
 
+std::string RemainingArgumentsAfterFirstToken(const char* rawArguments)
+{
+    if (rawArguments == nullptr)
+    {
+        return "";
+    }
+
+    std::string arguments(rawArguments);
+    size_t firstTokenEnd = arguments.find(' ');
+    if (firstTokenEnd == std::string::npos)
+    {
+        return "";
+    }
+
+    size_t remainingStart = arguments.find_first_not_of(' ', firstTokenEnd);
+    if (remainingStart == std::string::npos)
+    {
+        return "";
+    }
+
+    return arguments.substr(remainingStart);
+}
+
+void KickPlayerByIdCommand(ConsoleContext& cc)
+{
+    if (!g_program->m_server->IsRunning() || g_program->m_server->m_playerManager == nullptr)
+    {
+        cc << "This is a server command, and you aren't running a server!";
+        return;
+    }
+
+    auto stream = cc.stream();
+    uint64_t id = 0;
+    stream >> id;
+
+    if (id == 0)
+    {
+        cc << "Invalid player id";
+        return;
+    }
+
+    ServerPlayer* player = g_program->m_server->m_playerManager->GetPlayerOrSpectator(id);
+    if (player == nullptr)
+    {
+        cc << "Couldn't find player " << id;
+        return;
+    }
+
+    std::string reason = RemainingArgumentsAfterFirstToken(cc.rawArguments);
+    if (reason.empty())
+    {
+        reason = "Kicked by host";
+    }
+
+    const std::string playerName = player->m_name;
+    g_program->m_server->KickPlayer(player, reason.c_str());
+    cc << "Kicked " << playerName << " (" << id << ")";
+}
+
+void BanPlayerByIdCommand(ConsoleContext& cc)
+{
+    if (!g_program->m_server->IsRunning() || g_program->m_server->m_playerManager == nullptr)
+    {
+        cc << "This is a server command, and you aren't running a server!";
+        return;
+    }
+
+    auto stream = cc.stream();
+    uint64_t id = 0;
+    stream >> id;
+
+    if (id == 0)
+    {
+        cc << "Invalid player id";
+        return;
+    }
+
+    ServerPlayer* player = g_program->m_server->m_playerManager->GetPlayerOrSpectator(id);
+    if (player == nullptr)
+    {
+        cc << "Couldn't find player " << id;
+        return;
+    }
+
+    std::string reason = RemainingArgumentsAfterFirstToken(cc.rawArguments);
+    if (reason.empty())
+    {
+        reason = "Banned by host";
+    }
+
+    const std::string playerName = player->m_name;
+    g_program->m_server->KickPlayer(player, reason.c_str());
+    cc << "Banned " << playerName << " (" << id << ")";
+}
+
 void FullTeamSwapCommand(ConsoleContext& cc)
 {
     auto& playerList = g_program->m_server->GetServerGameContext()->serverPlayerManager->m_players;
@@ -607,6 +702,8 @@ Console::Console()
     RegisterConsoleCommand(&SetTeamCommand, "SetTeam", "<player> <team>");
     RegisterConsoleCommand(&SetTeamByIndexCommand, "SetTeamByIndex", "<playerIndex> <team>");
     RegisterConsoleCommand(&SetTeamByIdCommand, "SetTeamById", "<playerId> <team>");
+    RegisterConsoleCommand(&KickPlayerByIdCommand, "KickPlayerById", "<playerId> <reason>");
+    RegisterConsoleCommand(&BanPlayerByIdCommand, "BanPlayerById", "<playerId> <reason>");
     RegisterConsoleCommand(&FullTeamSwapCommand, "FullTeamSwap");
     RegisterConsoleCommand(&ShuffleTeamsCommand, "ShuffleTeams");
     RegisterConsoleCommand(&TeleportCommand, "Teleport", "<player> <x> <y> <z>");

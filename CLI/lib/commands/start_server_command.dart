@@ -339,7 +339,11 @@ class StartServerCommand extends Command<int> {
     );
 
     try {
-      _cleanInvalidLocalBfiiLicenseFiles(contentId: _bfiiContentId);
+      await _prepareLocalBfiiLicense(
+        gamePath: launchConfig.gamePath,
+        mode: licenseMode,
+        contentId: _bfiiContentId,
+      );
     } on BfiiHostConfigException catch (e) {
       _logger.err(e.message);
       return ExitCode.usage.code;
@@ -357,8 +361,8 @@ class StartServerCommand extends Command<int> {
       }
     } else {
       _logger.info(
-        'Skipping synced BFII license file because license-mode=refresh; '
-        'Maxima will request a fresh license.',
+        'Local BFII license was provisioned before launch; Maxima launch will '
+        'reuse the verified license instead of racing another refresh.',
       );
     }
 
@@ -585,6 +589,58 @@ class StartServerCommand extends Command<int> {
     );
   }
 
+  Future<void> _prepareLocalBfiiLicense({
+    required String gamePath,
+    required _BfiiLicenseMode mode,
+    required String contentId,
+  }) async {
+    _cleanInvalidLocalBfiiLicenseFiles(contentId: contentId);
+
+    if (mode != _BfiiLicenseMode.refresh) {
+      _logger.info(
+        'BFII local license refresh is disabled; using existing license state.',
+      );
+      return;
+    }
+
+    _logger.info(
+      'Requesting and saving BFII license before host process launch...',
+    );
+    late final String authToken;
+    try {
+      authToken = await getAuthToken();
+    } catch (e) {
+      throw BfiiHostConfigException(
+        'Failed to read Maxima/EA OAuth access token before BFII license '
+        'provisioning. Sign in through EA/Maxima, then retry: $e',
+      );
+    }
+
+    try {
+      await provisionGameLicense(
+        gamePath: gamePath,
+        user: authToken,
+        pass: '',
+        contentId: contentId,
+      );
+    } catch (e) {
+      throw BfiiHostConfigException(
+        'Failed to provision BFII license through Maxima/EA OAuth before '
+        'launch: $e',
+      );
+    }
+
+    await _waitForStableLocalBfiiLicenseFiles(contentId: contentId);
+
+    // The license was refreshed explicitly. Keeping this flag set lets Maxima
+    // request/write the same license again inside start_game(), which can race
+    // BFII's startup license read and surface as EA Invalid Cipher 0x0006.
+    Env.delete('MAXIMA_FORCE_LICENSE_REFRESH');
+    _logger.info(
+      'BFII license is stable; disabled duplicate Maxima refresh for launch.',
+    );
+  }
+
   void _cleanInvalidLocalBfiiLicenseFiles({required String contentId}) {
     if (!Platform.isWindows) {
       return;
@@ -648,6 +704,79 @@ class StartServerCommand extends Command<int> {
       return false;
     } finally {
       handle?.closeSync();
+    }
+  }
+
+  Future<void> _waitForStableLocalBfiiLicenseFiles({
+    required String contentId,
+  }) async {
+    if (!Platform.isWindows) {
+      return;
+    }
+
+    final licenseDirectory = _licenseDirectory();
+    if (licenseDirectory == null) {
+      throw const BfiiHostConfigException(
+        'EA license directory is missing after Maxima license provisioning.',
+      );
+    }
+
+    final main = File('${licenseDirectory.path}\\$contentId.dlf');
+    final cached = File('${licenseDirectory.path}\\${contentId}_cached.dlf');
+    final deadline = DateTime.now().add(const Duration(seconds: 15));
+    Object? lastError;
+
+    while (DateTime.now().isBefore(deadline)) {
+      try {
+        _assertStableLicenseFile(main);
+        _assertStableLicenseFile(cached);
+        _logger.info(
+          'BFII license files are present, signed, and stable: '
+          '${main.path}',
+        );
+        return;
+      } on Object catch (e) {
+        lastError = e;
+      }
+
+      await Future<void>.delayed(const Duration(milliseconds: 250));
+    }
+
+    throw BfiiHostConfigException(
+      'BFII license files did not become stable after Maxima provisioning. '
+      'Last error: $lastError',
+    );
+  }
+
+  Directory? _licenseDirectory() {
+    final programData = Platform.environment['ProgramData'];
+    if (programData == null || programData.trim().isEmpty) {
+      return null;
+    }
+
+    final directory = Directory(
+      '$programData\\Electronic Arts\\EA Services\\License',
+    );
+    return directory.existsSync() ? directory : null;
+  }
+
+  void _assertStableLicenseFile(File file) {
+    if (!file.existsSync()) {
+      throw BfiiHostConfigException('Missing BFII license file: ${file.path}');
+    }
+
+    if (!_hasEncodedLicenseSignatureHeader(file)) {
+      throw BfiiHostConfigException(
+        'BFII license signature header is invalid: ${file.path}',
+      );
+    }
+
+    final modified = file.lastModifiedSync();
+    final quietFor = DateTime.now().difference(modified);
+    if (quietFor < const Duration(milliseconds: 750)) {
+      throw BfiiHostConfigException(
+        'BFII license file is still being written: ${file.path}',
+      );
     }
   }
 
